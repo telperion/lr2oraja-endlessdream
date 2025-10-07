@@ -221,6 +221,309 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 		}
 	}
 
+	public enum FourteenizerAlgorithm {
+		NONE,
+		A,
+		B,
+		C,
+	}
+
+	public class FourteenizerState {
+		private static final int LANES = 16;
+		private Note[] noteHistory;
+		private LongNote[] heads;
+		private java.util.Random rand;
+
+
+		private final boolean isScratchLane(int lane) {
+			return lane == 0 || lane == 15;
+		}
+
+		// (1 - e^(-kt)) constants for the pdf calculation
+
+		// Time since the last note in the same lane
+		// Applied on key lanes only
+		private final double AVOID_JACKS = 0.5;
+		private final boolean impactJacks(int laneTarget, int laneTest) {
+			return (laneTarget == laneTest);
+		}
+
+		// Time since the last note in the scratch lane
+		// Applied on key lanes only
+		private final double AVOID_MURIZARA = 0.5;
+		private final boolean impactMurizara(int laneTarget, int laneTest) {
+			if (laneTarget <= 7) {
+				// Check P1 turntable.
+				return (laneTest == 0);
+			}
+			// Check P2 turntable.
+			return (laneTest == 15);
+		}
+
+		// Time since the last note in the other 56 lane on the same side
+		// Applied on "56" lanes only (indices 2, 3, 12, 13)
+		private final double AVOID_56 = 0.5;
+		private final boolean impact56(int laneTarget, int laneTest) {
+			if (laneTarget == 2) {return (laneTest == 3);}
+			if (laneTarget == 3) {return (laneTest == 2);}
+			if (laneTarget == 12) {return (laneTest == 13);}
+			if (laneTarget == 13) {return (laneTest == 12);}
+			return false;
+		}
+
+		// Time since the last note in lanes on the same side of the opposite color
+		// Applied on key lanes only
+		private final double AVOID_KNIGHT = 0.5;
+		private final boolean impactKnight(int laneTarget, int laneTest) {
+			if (isScratchLane(laneTest)) {
+				// Scratch lane cannot form a knight chord.
+				return false;
+			}
+			if ((laneTarget + laneTest) % 2 == 0) {
+				// Will be same color if on same side.
+				return false;
+			}
+			return ((laneTarget <= 7) == (laneTest <= 7));
+		}
+
+		// Scaling applied to the avoid murizara constant
+		// (1 - e^(-kt)*e^(-kl)), l = lanes between scratch lane and target lane
+		// e.g. lane 14 -> l=0, lane 12 -> l=2
+		// DEFINE_MURIZARA ~ 0 -> all lanes are treated equally for murizara
+		private final double DEFINE_MURIZARA = 0.5;
+		private final int getMurizaraDistance(int laneTarget) {
+			if (laneTarget <= 7) {
+				return laneTarget;
+			}
+			return 15 - laneTarget;
+		}
+
+		// Preference for keeping consecutive scratch notes in the same lane
+		private final double PREFER_CONSECUTIVE_SCRATCH = 0.5;
+
+		// So you're saying there's a chance.
+		private final double MIN_PDF = 0.000001;
+
+		
+		public FourteenizerState(long seed) {
+			this.noteHistory = new Note[LANES];
+			this.heads = new LongNote[LANES];
+			this.rand = new java.util.Random(seed);
+		}
+
+		private double pdf(int lane, long time) {
+			if (heads[lane] != null) {
+				// Early exit - can't put a new note in the middle of a LN.
+				return 0.0;
+			}
+			
+			boolean anyHistory = false;
+			for (int i = 0; i < LANES; i++) {
+				if (noteHistory[i] != null) {
+					anyHistory = true;
+					break;
+				}
+			}
+			if (!anyHistory) {
+				// Early exit - no note history to influence positioning yet.
+				return 1.0;
+			}
+			
+			double pdf = 1.0;
+			for (int i = 0; i < LANES; i++) {
+				// Calculate the time since the last note in the test lane.
+				double dt = 0.0;
+				if (noteHistory[lane] != null) {
+					dt = time - noteHistory[lane].getTime();
+				}
+				else {
+					dt = time;
+				}
+				dt /= 1000.0;
+
+				if (isScratchLane(lane)) {
+					// Special behavior for consecutive scratch.
+					if (isScratchLane(i)) {
+						final double df = Math.exp(-PREFER_CONSECUTIVE_SCRATCH * dt);
+						if (lane == i) {
+							pdf *= df;
+						}
+						else {
+							pdf *= 1.0 - df;
+						}
+						Logger.getGlobal().info("Scratch lane: " + lane + " -> " + i + " (dt: " + dt + ", df: " + df + ")");
+					}
+					else {
+						pdf = 0.0;
+					}
+				}
+				else {
+					// Incorporate avoidance rules
+					if (impactJacks(lane, i)) {
+						pdf *= (1.0 - Math.exp(-AVOID_JACKS * dt));
+						Logger.getGlobal().info("Jack: " + lane + " -> " + i + " (dt: " + dt + ")");
+					}
+					if (impactMurizara(lane, i)) {
+						pdf *= (1.0 - Math.exp(-AVOID_MURIZARA * dt) * Math.exp(-DEFINE_MURIZARA * getMurizaraDistance(i)));
+						Logger.getGlobal().info("Murizara: " + lane + " -> " + i + " (dt: " + dt + ")");
+					}
+					if (impact56(lane, i)) {
+						pdf *= (1.0 - Math.exp(-AVOID_56 * dt));
+						Logger.getGlobal().info("56: " + lane + " -> " + i + " (dt: " + dt + ")");
+					}
+					if (impactKnight(lane, i)) {
+						pdf *= (1.0 - Math.exp(-AVOID_KNIGHT * dt));
+						Logger.getGlobal().info("Knight: " + lane + " -> " + i + " (dt: " + dt + ")");
+					}
+				}
+			}
+			return Math.max(pdf, MIN_PDF);
+		}
+
+		public List<Integer> selectLanes(List<Integer> lanesFrom, long time) {
+			List<Integer> lanesTo = new ArrayList<>();
+
+			// What lanes are up for consideration?
+			boolean incorporateKeyLanes = !lanesFrom.stream().allMatch(this::isScratchLane);
+			boolean incorporateScratchLanes = lanesFrom.stream().anyMatch(this::isScratchLane);
+			for (int i = 0; i < LANES; i++) {
+				if (incorporateScratchLanes && isScratchLane(i) || incorporateKeyLanes && !isScratchLane(i)) {
+					lanesTo.add(i);
+				}
+			}
+			Logger.getGlobal().info("Lanes to consider: " + lanesTo);
+
+			// Calculate PDF list
+			List<Double> pdf_list = new ArrayList<>();
+			for (int laneTest : lanesTo) {
+				pdf_list.add(pdf(laneTest, time));
+			}
+			Logger.getGlobal().info("PDF list: " + pdf_list);
+
+			// Repeatedly select lanes randomly using PDF
+			List<Integer> result = new ArrayList<>();
+			for (int i = 0; i < lanesTo.size(); i++) {
+				double r = rand.nextDouble();
+				final double sum = pdf_list.stream().mapToDouble(Double::doubleValue).sum();
+				if (sum <= 0.0) {
+					break;
+				}
+				for (int index = 0; index < pdf_list.size(); index++) {
+					r -= pdf_list.get(index) / sum;
+					if (r <= 0.0) {
+						result.add(lanesTo.remove(index));
+						pdf_list.remove(index);
+						break;
+					}
+				}
+			}
+			return result;
+		}
+
+		public void randomizeSpecificLanes(
+			TimeLine tl,
+			List<Integer> lanes
+		) {
+			Note[] notes = new Note[LANES];
+			Note[] hnotes = new Note[LANES];
+			for (int i = 0; i < LANES; i++) {
+				notes[i] = tl.getNote(i);
+				hnotes[i] = tl.getHiddenNote(i);
+			}
+
+			List<Integer> unheldLanes = new ArrayList<>();
+			for (int i : lanes) {
+				if (heads[i] == null) {
+					unheldLanes.add(i);
+				}
+			}
+
+			// TODO: remove lanes with LN heads from the lanes list
+			List<Integer> mappedLanes = selectLanes(unheldLanes, tl.getTime());
+			Logger.getGlobal().info("Lanes re-mapped: " + unheldLanes + " -> " + mappedLanes);
+
+			for (int i = 0; i < unheldLanes.size(); i++) {
+				final int laneFrom = unheldLanes.get(i);
+				
+				if (notes[i] instanceof LongNote && ((LongNote) notes[i]).isEnd()) {
+					for (int laneHead = 0; laneHead < LANES; laneHead++) {
+						if (heads[laneHead] == ((LongNote) notes[i]).getPair()) {
+							heads[laneHead] = null;
+							tl.setNote(laneHead, notes[i]);
+							tl.setHiddenNote(laneHead, hnotes[i]);
+							Logger.getGlobal().info("Hold LN: " + laneFrom + " -> " + laneHead);
+							break;
+						}
+					}
+				}
+				else {
+					final int laneTo = mappedLanes.remove(0);
+					tl.setNote(laneTo, notes[i]);
+					tl.setHiddenNote(laneTo, hnotes[i]);
+				}
+			}
+		}
+
+		public void updateState(TimeLine tl) {
+			if (!tl.existNote() && !tl.existHiddenNote()) {
+				return;
+			}
+
+			Note[] notes = new Note[LANES];
+			Note[] hnotes = new Note[LANES];
+			for (int i = 0; i < LANES; i++) {
+				notes[i] = tl.getNote(i);
+				hnotes[i] = tl.getHiddenNote(i);
+			}
+
+			for (int i = 0; i < LANES; i++) {
+				if (notes[i] != null) {
+					noteHistory[i] = notes[i];
+				}
+				if (notes[i] instanceof LongNote && !((LongNote) notes[i]).isEnd()) {
+					heads[i] = (LongNote) notes[i];
+				}
+			}
+		}
+	}
+
+	public static class PlayerFourteenizer extends LaneShuffleModifier {
+		private FourteenizerAlgorithm algorithm = FourteenizerAlgorithm.NONE;
+		public FourteenizerAlgorithm getAlgorithm() {return this.algorithm;}
+
+		public PlayerFourteenizer(FourteenizerAlgorithm algo) {
+			super(0, true, false);
+			setAssistLevel(AssistLevel.ASSIST);
+			this.algorithm = algo;
+		}
+
+		protected int[] makeRandom(int[] keys, BMSModel model) {
+			int[] result = IntStream.range(0, model.getMode().key * 2).toArray();
+			return result;
+		}
+
+		public void modify(BMSModel model) {
+			if (model.getMode().player == 1) {
+				return;
+			}
+
+			Mode mode = model.getMode();
+			final int[] keys = getKeys(mode, player, isScratchLaneModify);
+			if(keys.length == 0) {
+				return;
+			}
+			FourteenizerState stateMachine = new FourteenizerState(getSeed());
+
+			TimeLine[] timelines = model.getAllTimeLines();
+			for (int index = 0; index < timelines.length; index++) {
+				TimeLine tl = timelines[index];
+				stateMachine.randomizeSpecificLanes(tl, Arrays.asList(0, 15));
+				stateMachine.randomizeSpecificLanes(tl, Arrays.asList(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14));
+				stateMachine.updateState(tl);
+			}
+		}
+	}
+
 	public static class LaneCrossShuffleModifier extends LaneShuffleModifier {
 
 		public LaneCrossShuffleModifier(int player, boolean isScratchLaneModify) {
