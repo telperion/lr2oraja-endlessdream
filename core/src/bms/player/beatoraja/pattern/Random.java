@@ -23,8 +23,9 @@ public enum Random {
     RANDOM_PLAYABLE(RandomUnit.LANE, true),
     S_RANDOM_PLAYABLE(RandomUnit.NOTE, true),
 
-    FLIP(RandomUnit.PLAYER, true),
-    BATTLE(RandomUnit.PLAYER, true),
+    FOURTEENIZER_A(RandomUnit.PLAYER, true),
+    FOURTEENIZER_B(RandomUnit.PLAYER, true),
+    FOURTEENIZER_C(RandomUnit.PLAYER, true),
     ;
 
 	public final RandomUnit unit;
@@ -34,8 +35,8 @@ public enum Random {
 	public static final Random[] OPTION_PMS =
 		{IDENTITY, MIRROR, RANDOM, ROTATE, S_RANDOM_NO_THRESHOLD, SPIRAL, H_RANDOM, CONVERGE, RANDOM_PLAYABLE, S_RANDOM_PLAYABLE};
 
-	public static final Random[] OPTION_DOUBLE = {IDENTITY, FLIP};
-	public static final Random[] OPTION_SINGLE = {IDENTITY, BATTLE};
+	public static final Random[] OPTION_DOUBLE = {IDENTITY};
+	public static final Random[] OPTION_SINGLE = {IDENTITY, FOURTEENIZER_A, FOURTEENIZER_B, FOURTEENIZER_C};
 
 	/**
 	 * 変更レーンにスクラッチレーンを含むか
