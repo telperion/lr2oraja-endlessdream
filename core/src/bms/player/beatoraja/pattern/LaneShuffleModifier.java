@@ -232,29 +232,31 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 		private static final int LANES = 16;
 		private Note[] noteHistory;
 		private LongNote[] heads;
+		private Map<Integer, Integer> permuter;
 		private java.util.Random rand;
+		private int count;
 
 
 		private final boolean isScratchLane(int lane) {
-			return lane == 0 || lane == 15;
+			return lane == 7 || lane == 15;
 		}
 
 		// (1 - e^(-kt)) constants for the pdf calculation
 
 		// Time since the last note in the same lane
 		// Applied on key lanes only
-		private final double AVOID_JACKS = 0.5;
+		private final double AVOID_JACKS = 10.0;
 		private final boolean impactJacks(int laneTarget, int laneTest) {
 			return (laneTarget == laneTest);
 		}
 
 		// Time since the last note in the scratch lane
 		// Applied on key lanes only
-		private final double AVOID_MURIZARA = 0.5;
+		private final double AVOID_MURIZARA = 1.0;
 		private final boolean impactMurizara(int laneTarget, int laneTest) {
 			if (laneTarget <= 7) {
 				// Check P1 turntable.
-				return (laneTest == 0);
+				return (laneTest == 7);
 			}
 			// Check P2 turntable.
 			return (laneTest == 15);
@@ -262,10 +264,10 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 
 		// Time since the last note in the other 56 lane on the same side
 		// Applied on "56" lanes only (indices 2, 3, 12, 13)
-		private final double AVOID_56 = 0.5;
+		private final double AVOID_56 = 1.0;
 		private final boolean impact56(int laneTarget, int laneTest) {
-			if (laneTarget == 2) {return (laneTest == 3);}
-			if (laneTarget == 3) {return (laneTest == 2);}
+			if (laneTarget == 1) {return (laneTest == 2);}
+			if (laneTarget == 2) {return (laneTest == 1);}
 			if (laneTarget == 12) {return (laneTest == 13);}
 			if (laneTarget == 13) {return (laneTest == 12);}
 			return false;
@@ -273,27 +275,23 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 
 		// Time since the last note in lanes on the same side of the opposite color
 		// Applied on key lanes only
-		private final double AVOID_KNIGHT = 0.5;
+		private final double AVOID_KNIGHT = 10.0;
 		private final boolean impactKnight(int laneTarget, int laneTest) {
 			if (isScratchLane(laneTest)) {
 				// Scratch lane cannot form a knight chord.
 				return false;
 			}
-			if ((laneTarget + laneTest) % 2 == 0) {
-				// Will be same color if on same side.
-				return false;
-			}
-			return ((laneTarget <= 7) == (laneTest <= 7));
+			return (laneTarget + laneTest) % 2 == 0;
 		}
 
 		// Scaling applied to the avoid murizara constant
 		// (1 - e^(-kt)*e^(-kl)), l = lanes between scratch lane and target lane
 		// e.g. lane 14 -> l=0, lane 12 -> l=2
 		// DEFINE_MURIZARA ~ 0 -> all lanes are treated equally for murizara
-		private final double DEFINE_MURIZARA = 0.5;
+		private final double DEFINE_MURIZARA = 0.0;
 		private final int getMurizaraDistance(int laneTarget) {
 			if (laneTarget <= 7) {
-				return laneTarget;
+				return 7 - laneTarget;
 			}
 			return 15 - laneTarget;
 		}
@@ -308,7 +306,9 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 		public FourteenizerState(long seed) {
 			this.noteHistory = new Note[LANES];
 			this.heads = new LongNote[LANES];
+			this.permuter = new HashMap<>();
 			this.rand = new java.util.Random(seed);
+			this.count = 0;
 		}
 
 		private double pdf(int lane, long time) {
@@ -316,9 +316,14 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 				// Early exit - can't put a new note in the middle of a LN.
 				return 0.0;
 			}
+
+			if (permuter.containsValue(lane)) {
+				// Early exit - already receiving a note this update.
+				return 0.0;
+			}
 			
-			boolean anyHistory = false;
-			for (int i = 0; i < LANES; i++) {
+			boolean anyHistory = permuter.size() > 0;
+			for (int i = 0; !anyHistory && i < LANES; i++) {
 				if (noteHistory[i] != null) {
 					anyHistory = true;
 					break;
@@ -333,8 +338,14 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 			for (int i = 0; i < LANES; i++) {
 				// Calculate the time since the last note in the test lane.
 				double dt = 0.0;
-				if (noteHistory[lane] != null) {
-					dt = time - noteHistory[lane].getTime();
+				if (heads[i] != null) {
+					dt = 0.0;
+				}
+				else if (permuter.containsValue(i)) {
+					dt = 0.0;
+				}
+				else if (noteHistory[i] != null) {
+					dt = time - noteHistory[i].getTime();
 				}
 				else {
 					dt = time;
@@ -345,13 +356,10 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 					// Special behavior for consecutive scratch.
 					if (isScratchLane(i)) {
 						final double df = Math.exp(-PREFER_CONSECUTIVE_SCRATCH * dt);
-						if (lane == i) {
+						if (lane != i) {
 							pdf *= df;
 						}
-						else {
-							pdf *= 1.0 - df;
-						}
-						Logger.getGlobal().info("Scratch lane: " + lane + " -> " + i + " (dt: " + dt + ", df: " + df + ")");
+						// Logger.getGlobal().info("Scratch lane: " + lane + " -> " + i + " (dt: " + dt + ", df: " + df + ")");
 					}
 					else {
 						pdf = 0.0;
@@ -360,70 +368,41 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 				else {
 					// Incorporate avoidance rules
 					if (impactJacks(lane, i)) {
-						pdf *= (1.0 - Math.exp(-AVOID_JACKS * dt));
-						Logger.getGlobal().info("Jack: " + lane + " -> " + i + " (dt: " + dt + ")");
+						final double mdf = Math.exp(-AVOID_JACKS * dt);
+						pdf *= mdf;
+						// Logger.getGlobal().info("Jack: " + lane + " -> " + i + " (mdf: " + mdf + ")");
 					}
 					if (impactMurizara(lane, i)) {
-						pdf *= (1.0 - Math.exp(-AVOID_MURIZARA * dt) * Math.exp(-DEFINE_MURIZARA * getMurizaraDistance(i)));
-						Logger.getGlobal().info("Murizara: " + lane + " -> " + i + " (dt: " + dt + ")");
+						final double mdf = (1.0 - Math.exp(-AVOID_MURIZARA * dt) * Math.exp(-DEFINE_MURIZARA * getMurizaraDistance(i)));
+						pdf *= mdf;
+						// Logger.getGlobal().info("Murizara: " + lane + " -> " + i + " (mdf: " + mdf + ")");
 					}
 					if (impact56(lane, i)) {
-						pdf *= (1.0 - Math.exp(-AVOID_56 * dt));
-						Logger.getGlobal().info("56: " + lane + " -> " + i + " (dt: " + dt + ")");
+						final double mdf = (1.0 - Math.exp(-AVOID_56 * dt));
+						pdf *= mdf;
+						// Logger.getGlobal().info("56: " + lane + " -> " + i + " (mdf: " + mdf + ")");
 					}
 					if (impactKnight(lane, i)) {
-						pdf *= (1.0 - Math.exp(-AVOID_KNIGHT * dt));
-						Logger.getGlobal().info("Knight: " + lane + " -> " + i + " (dt: " + dt + ")");
+						final double mdf = (1.0 - Math.exp(-AVOID_KNIGHT * dt));
+						pdf *= mdf;
+						// Logger.getGlobal().info("Knight: " + lane + " -> " + i + " (mdf: " + mdf + ")");
 					}
 				}
 			}
 			return Math.max(pdf, MIN_PDF);
 		}
 
-		public List<Integer> selectLanes(List<Integer> lanesFrom, long time) {
-			List<Integer> lanesTo = new ArrayList<>();
-
-			// What lanes are up for consideration?
-			boolean incorporateKeyLanes = !lanesFrom.stream().allMatch(this::isScratchLane);
-			boolean incorporateScratchLanes = lanesFrom.stream().anyMatch(this::isScratchLane);
+		public void protectLN() {
 			for (int i = 0; i < LANES; i++) {
-				if (incorporateScratchLanes && isScratchLane(i) || incorporateKeyLanes && !isScratchLane(i)) {
-					lanesTo.add(i);
+				if (heads[i] != null) {
+					// Make sure the lane appears as a value in the permuter without assigning it a legal key.
+					Logger.getGlobal().info("Protecting LN: " + i);
+					permuter.put(1000+i, i);
 				}
 			}
-			Logger.getGlobal().info("Lanes to consider: " + lanesTo);
-
-			// Calculate PDF list
-			List<Double> pdf_list = new ArrayList<>();
-			for (int laneTest : lanesTo) {
-				pdf_list.add(pdf(laneTest, time));
-			}
-			Logger.getGlobal().info("PDF list: " + pdf_list);
-
-			// Repeatedly select lanes randomly using PDF
-			List<Integer> result = new ArrayList<>();
-			for (int i = 0; i < lanesTo.size(); i++) {
-				double r = rand.nextDouble();
-				final double sum = pdf_list.stream().mapToDouble(Double::doubleValue).sum();
-				if (sum <= 0.0) {
-					break;
-				}
-				for (int index = 0; index < pdf_list.size(); index++) {
-					r -= pdf_list.get(index) / sum;
-					if (r <= 0.0) {
-						result.add(lanesTo.remove(index));
-						pdf_list.remove(index);
-						break;
-					}
-				}
-			}
-			return result;
 		}
 
-		public void randomizeSpecificLanes(
-			TimeLine tl,
-			List<Integer> lanes
-		) {
+		public void resolveLN(TimeLine tl) {
 			Note[] notes = new Note[LANES];
 			Note[] hnotes = new Note[LANES];
 			for (int i = 0; i < LANES; i++) {
@@ -431,37 +410,100 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 				hnotes[i] = tl.getHiddenNote(i);
 			}
 
-			List<Integer> unheldLanes = new ArrayList<>();
-			for (int i : lanes) {
-				if (heads[i] == null) {
-					unheldLanes.add(i);
-				}
-			}
-
-			// TODO: remove lanes with LN heads from the lanes list
-			List<Integer> mappedLanes = selectLanes(unheldLanes, tl.getTime());
-			Logger.getGlobal().info("Lanes re-mapped: " + unheldLanes + " -> " + mappedLanes);
-
-			for (int i = 0; i < unheldLanes.size(); i++) {
-				final int laneFrom = unheldLanes.get(i);
-				
+			for (int i = 0; i < LANES; i++) {
 				if (notes[i] instanceof LongNote && ((LongNote) notes[i]).isEnd()) {
 					for (int laneHead = 0; laneHead < LANES; laneHead++) {
 						if (heads[laneHead] == ((LongNote) notes[i]).getPair()) {
 							heads[laneHead] = null;
-							tl.setNote(laneHead, notes[i]);
-							tl.setHiddenNote(laneHead, hnotes[i]);
-							Logger.getGlobal().info("Hold LN: " + laneFrom + " -> " + laneHead);
+							Logger.getGlobal().info("Resolving LN: " + i + " -> " + laneHead);
+							permuter.put(i, laneHead);
 							break;
 						}
 					}
 				}
-				else {
-					final int laneTo = mappedLanes.remove(0);
-					tl.setNote(laneTo, notes[i]);
-					tl.setHiddenNote(laneTo, hnotes[i]);
+			}
+		}
+
+		public boolean randomizeSpecificLanes(Set<Integer> lanesFrom, long time) {
+			if (lanesFrom.size() == 0) {
+				return true;
+			}
+
+			// What lanes are up for consideration?
+			boolean incorporateKeyLanes = !lanesFrom.stream().allMatch(this::isScratchLane);
+			boolean incorporateScratchLanes = lanesFrom.stream().anyMatch(this::isScratchLane);
+
+			// Calculate PDF list
+			List<Double> pdfList = new ArrayList<>();
+			List<Integer> pdfLanes = new ArrayList<>();
+			for (int i = 0; i < LANES; i++) {
+				pdfLanes.add(i);
+				if (permuter.containsValue(i)) {
+					pdfList.add(0.0);
+					continue;
+				}
+				if (!incorporateScratchLanes && isScratchLane(i)) {
+					pdfList.add(0.0);
+					continue;
+				}
+				if (!incorporateKeyLanes && !isScratchLane(i)) {
+					pdfList.add(0.0);
+					continue;
+				}
+				pdfList.add(pdf(i, time));
+			}
+			Logger.getGlobal().info("PDF list: " + pdfList);
+
+			// Repeatedly select lanes randomly using PDF
+			for (int i : lanesFrom) {
+				if (permuter.containsKey(i)) {
+					Logger.getGlobal().info("Skipping already-mapped lane: " + i + " -> " + permuter.get(i));
+					continue;
+				}
+				if (pdfLanes.size() == 0) {
+					Logger.getGlobal().info("No lanes left to map to: " + lanesFrom);
+					return false;
+				}
+				double r = rand.nextDouble();
+				final double sum = pdfList.stream().mapToDouble(Double::doubleValue).sum();
+				if (sum <= 0.0) {
+					Logger.getGlobal().info("PDF excludes further remapping: " + lanesFrom);
+					return false;
+				}
+				for (int index = 0; index < pdfList.size(); index++) {
+					r -= pdfList.get(index) / sum;
+					if (r <= 0.0) {
+						permuter.put(i, pdfLanes.remove(index));
+						pdfList.remove(index);
+						break;
+					}
 				}
 			}
+			return true;
+		}
+
+		public void performPermutation(TimeLine tl) {
+			Logger.getGlobal().info("Performing permutation: " + permuter);
+
+			Note[] notes = new Note[LANES];
+			Note[] hnotes = new Note[LANES];
+			for (int i = 0; i < LANES; i++) {
+				notes[i] = tl.getNote(i);
+				hnotes[i] = tl.getHiddenNote(i);
+				tl.setNote(i, null);
+				tl.setHiddenNote(i, null);
+			}
+			
+			for (int i = 0; i < LANES; i++) {
+				int mapped = permuter.getOrDefault(i, i);
+				if (notes[i] != null || hnotes[i] != null) {
+					Logger.getGlobal().info("Setting note: " + i + " -> " + mapped);
+					tl.setNote(mapped, notes[i]);
+					tl.setHiddenNote(mapped, hnotes[i]);
+				}
+			}
+
+			permuter.clear();
 		}
 
 		public void updateState(TimeLine tl) {
@@ -484,6 +526,35 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 					heads[i] = (LongNote) notes[i];
 				}
 			}
+			count++;
+		}
+
+		public void process(TimeLine tl) {
+			Logger.getGlobal().info("Processing TL: " + tl.getTime());
+			protectLN();
+			resolveLN(tl);
+
+			Set<Integer> hasNote = new HashSet<>();
+			for (int i = 0; i < LANES; i++) {
+				if (tl.getNote(i) == null && tl.getHiddenNote(i) == null) {
+					continue;
+				}
+				if (permuter.containsKey(i)) {
+					continue;
+				}
+				hasNote.add(i);
+			}
+
+			Set<Integer> scratchLanes = new HashSet<>(Set.of(7, 15));
+			scratchLanes.retainAll(hasNote);
+			randomizeSpecificLanes(scratchLanes, tl.getTime());
+
+			Set<Integer> keyLanes = new HashSet<>(Set.of(0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14));
+			keyLanes.retainAll(hasNote);
+			randomizeSpecificLanes(keyLanes, tl.getTime());
+
+			performPermutation(tl);
+			updateState(tl);
 		}
 	}
 
@@ -502,6 +573,7 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 			return result;
 		}
 
+		@Override
 		public void modify(BMSModel model) {
 			if (model.getMode().player == 1) {
 				return;
@@ -517,9 +589,9 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 			TimeLine[] timelines = model.getAllTimeLines();
 			for (int index = 0; index < timelines.length; index++) {
 				TimeLine tl = timelines[index];
-				stateMachine.randomizeSpecificLanes(tl, Arrays.asList(0, 15));
-				stateMachine.randomizeSpecificLanes(tl, Arrays.asList(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14));
-				stateMachine.updateState(tl);
+				if (tl.existNote() || tl.existHiddenNote()) {
+					stateMachine.process(tl);
+				}
 			}
 		}
 	}
