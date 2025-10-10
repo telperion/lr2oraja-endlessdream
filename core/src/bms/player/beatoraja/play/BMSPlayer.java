@@ -276,11 +276,10 @@ public class BMSPlayer extends MainState {
 			}
 
 			if (playinfo.doubleoption >= 1) {
-				if(model.getMode() == Mode.BEAT_5K || model.getMode() == Mode.BEAT_7K || model.getMode() == Mode.KEYBOARD_24K) {
+				if(model.getMode() == Mode.BEAT_5K || model.getMode() == Mode.BEAT_7K) {
 					switch (model.getMode()) {
 						case BEAT_5K -> model.setMode(Mode.BEAT_10K);
 						case BEAT_7K -> model.setMode(Mode.BEAT_14K);
-						case KEYBOARD_24K -> model.setMode(Mode.KEYBOARD_24K_DOUBLE);
 					}
 					LaneShuffleModifier mod = new PlayerFourteenizer(FourteenizerAlgorithm.values()[playinfo.doubleoption - 1]);
 					mod.modify(model);

@@ -244,14 +244,14 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 
 		// Time since the last note in the same lane
 		// Applied on key lanes only
-		private final double AVOID_JACKS = 10.0;
+		private final double AVOID_JACKS = 0.5;
 		private final boolean impactJacks(int laneTarget, int laneTest) {
 			return (laneTarget == laneTest);
 		}
 
 		// Time since the last note in the scratch lane
 		// Applied on key lanes only
-		private final double AVOID_MURIZARA = 1.0;
+		private final double AVOID_MURIZARA = 0.2;
 		private final boolean impactMurizara(int laneTarget, int laneTest) {
 			if (laneTarget <= 7) {
 				// Check P1 turntable.
@@ -261,9 +261,24 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 			return (laneTest == 15);
 		}
 
+		// Constant weight applied if the test lane is currently occupied by LN
+		// and on the same side as the target lane
+		// AVOID_LN_DODGE ~ 0 -> LN will have no effect on other notes
+		// Applied on all lanes
+		private final double AVOID_LN_DODGE = 0.8;
+		private final boolean impactLNDodge(int laneTarget, int laneTest) {
+			if ((laneTarget <= 7) != (laneTest <= 7)) {
+				return false;
+			}
+			if (heads[laneTest] != null) {
+				return true;
+			}
+			return false;
+		}
+
 		// Time since the last note in the other 56 lane on the same side
 		// Applied on "56" lanes only (indices 2, 3, 12, 13)
-		private final double AVOID_56 = 1.0;
+		private final double AVOID_56 = 0.1;
 		private final boolean impact56(int laneTarget, int laneTest) {
 			if (laneTarget == 1) {return (laneTest == 2);}
 			if (laneTarget == 2) {return (laneTest == 1);}
@@ -272,15 +287,20 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 			return false;
 		}
 
-		// Time since the last note in lanes on the same side of the opposite color
+		// Time since the last note in adjacent lanes on the same side
 		// Applied on key lanes only
-		private final double AVOID_KNIGHT = 10.0;
-		private final boolean impactKnight(int laneTarget, int laneTest) {
+		private final double AVOID_PILL = 5.0;
+		private final double AVOID_PILL_MIN_TIME = 0.1;
+		private final boolean impactPill(int laneTarget, int laneTest) {
 			if (isScratchLane(laneTest)) {
-				// Scratch lane cannot form a knight chord.
+				// Scratch lane cannot form a pill chord.
 				return false;
 			}
-			return (laneTarget + laneTest) % 2 == 0;
+			if ((laneTarget <= 7) != (laneTest <= 7)) {
+				// Don't compare across sides.
+				return false;
+			}
+			return (laneTarget - laneTest) == -1 || (laneTarget - laneTest) == 1;
 		}
 
 		// Scaling applied to the avoid murizara constant
@@ -299,7 +319,7 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 		private final double PREFER_CONSECUTIVE_SCRATCH = 0.5;
 
 		// So you're saying there's a chance.
-		private final double MIN_PDF = 0.000001;
+		private final double MIN_PDF = 1e-24;
 
 		
 		public FourteenizerState(long seed) {
@@ -367,7 +387,7 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 				else {
 					// Incorporate avoidance rules
 					if (impactJacks(lane, i)) {
-						final double mdf = Math.exp(-AVOID_JACKS * dt);
+						final double mdf = (1.0 - Math.exp(-AVOID_JACKS * dt));
 						pdf *= mdf;
 						// Logger.getGlobal().info("Jack: " + lane + " -> " + i + " (mdf: " + mdf + ")");
 					}
@@ -381,10 +401,15 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 						pdf *= mdf;
 						// Logger.getGlobal().info("56: " + lane + " -> " + i + " (mdf: " + mdf + ")");
 					}
-					if (impactKnight(lane, i)) {
-						final double mdf = (1.0 - Math.exp(-AVOID_KNIGHT * dt));
+					if (impactPill(lane, i)) {
+						final double mdf = (1.0 - Math.exp(-AVOID_PILL * Math.max(dt, AVOID_PILL_MIN_TIME)));
 						pdf *= mdf;
 						// Logger.getGlobal().info("Knight: " + lane + " -> " + i + " (mdf: " + mdf + ")");
+					}
+					if (impactLNDodge(lane, i)) {
+						final double mdf = 1.0 - AVOID_LN_DODGE;
+						pdf *= mdf;
+						// Logger.getGlobal().info("LNDodge: " + lane + " -> " + i + " (mdf: " + mdf + ")");
 					}
 				}
 			}
@@ -550,7 +575,9 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 
 			Set<Integer> keyLanes = new HashSet<>(Set.of(0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14));
 			keyLanes.retainAll(hasNote);
-			randomizeSpecificLanes(keyLanes, tl.getTime());
+			for (int lane : keyLanes) {
+				randomizeSpecificLanes(Set.of(lane), tl.getTime());
+			}
 
 			performPermutation(tl);
 			updateState(tl);
