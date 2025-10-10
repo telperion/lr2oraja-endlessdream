@@ -239,19 +239,37 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 		private final boolean isScratchLane(int lane) {
 			return lane == 7 || lane == 15;
 		}
+		private final boolean isP1Lane(int lane) {
+			return (lane <= 6);
+		}
+		private final boolean isP2Lane(int lane) {
+			return (lane >= 8) && (lane <= 14);
+		}
+		private final boolean mapToP1(int lane) {
+			if (isScratchLane(lane)) {
+				return false;
+			}
+			return (lane < 3) || (lane > 11);
+		}
+		private final boolean mapToP2(int lane) {
+			if (isScratchLane(lane)) {
+				return false;
+			}
+			return (lane >= 3) && (lane <= 11);
+		}
 
 		// (1 - e^(-kt)) constants for the pdf calculation
 
 		// Time since the last note in the same lane
 		// Applied on key lanes only
-		private final double AVOID_JACKS = 0.5;
+		private final double AVOID_JACKS = 0.02;
 		private final boolean impactJacks(int laneTarget, int laneTest) {
 			return (laneTarget == laneTest);
 		}
 
 		// Time since the last note in the scratch lane
 		// Applied on key lanes only
-		private final double AVOID_MURIZARA = 0.2;
+		private final double AVOID_MURIZARA = 10.0;
 		private final boolean impactMurizara(int laneTarget, int laneTest) {
 			if (laneTarget <= 7) {
 				// Check P1 turntable.
@@ -278,7 +296,7 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 
 		// Time since the last note in the other 56 lane on the same side
 		// Applied on "56" lanes only (indices 2, 3, 12, 13)
-		private final double AVOID_56 = 0.1;
+		private final double AVOID_56 = 0.01;
 		private final boolean impact56(int laneTarget, int laneTest) {
 			if (laneTarget == 1) {return (laneTest == 2);}
 			if (laneTarget == 2) {return (laneTest == 1);}
@@ -289,8 +307,8 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 
 		// Time since the last note in adjacent lanes on the same side
 		// Applied on key lanes only
-		private final double AVOID_PILL = 5.0;
-		private final double AVOID_PILL_MIN_TIME = 0.1;
+		private final double AVOID_PILL = 1.0;
+		private final double AVOID_PILL_MIN_TIME = 0.05;
 		private final boolean impactPill(int laneTarget, int laneTest) {
 			if (isScratchLane(laneTest)) {
 				// Scratch lane cannot form a pill chord.
@@ -454,7 +472,8 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 			}
 
 			// What lanes are up for consideration?
-			boolean incorporateKeyLanes = !lanesFrom.stream().allMatch(this::isScratchLane);
+			boolean incorporateP1Lanes = lanesFrom.stream().anyMatch(this::mapToP1);
+			boolean incorporateP2Lanes = lanesFrom.stream().anyMatch(this::mapToP2);
 			boolean incorporateScratchLanes = lanesFrom.stream().anyMatch(this::isScratchLane);
 
 			// Calculate PDF list
@@ -466,12 +485,24 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 					pdfList.add(0.0);
 					continue;
 				}
-				if (!incorporateScratchLanes && isScratchLane(i)) {
-					pdfList.add(0.0);
+				if (permuter.containsValue(7)) {
+					pdfList.add(isP2Lane(i) ? pdf(i, time) : 0.0);
 					continue;
 				}
-				if (!incorporateKeyLanes && !isScratchLane(i)) {
-					pdfList.add(0.0);
+				if (permuter.containsValue(15)) {
+					pdfList.add(isP1Lane(i) ? pdf(i, time) : 0.0);
+					continue;
+				}
+				if (isScratchLane(i)) {
+					pdfList.add(incorporateScratchLanes ? pdf(i, time) : 0.0);
+					continue;
+				}
+				if (isP1Lane(i)) {
+					pdfList.add(incorporateP1Lanes ? pdf(i, time) : 0.0);
+					continue;
+				}
+				if (isP2Lane(i)) {
+					pdfList.add(incorporateP2Lanes ? pdf(i, time) : 0.0);
 					continue;
 				}
 				pdfList.add(pdf(i, time));
@@ -573,9 +604,15 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 			scratchLanes.retainAll(hasNote);
 			randomizeSpecificLanes(scratchLanes, tl.getTime());
 
-			Set<Integer> keyLanes = new HashSet<>(Set.of(0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14));
-			keyLanes.retainAll(hasNote);
-			for (int lane : keyLanes) {
+			Set<Integer> mapToP1Lanes = new HashSet<>(Set.of(0, 1, 2, 12, 13, 14));
+			mapToP1Lanes.retainAll(hasNote);
+			for (int lane : mapToP1Lanes) {
+				randomizeSpecificLanes(Set.of(lane), tl.getTime());
+			}
+
+			Set<Integer> mapToP2Lanes = new HashSet<>(Set.of(3, 4, 5, 6, 8, 9, 10, 11));
+			mapToP2Lanes.retainAll(hasNote);
+			for (int lane : mapToP2Lanes) {
 				randomizeSpecificLanes(Set.of(lane), tl.getTime());
 			}
 
