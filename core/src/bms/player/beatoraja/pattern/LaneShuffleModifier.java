@@ -5,6 +5,7 @@ import bms.model.*;
 import java.util.*;
 
 import bms.player.beatoraja.modmenu.RandomTrainer;
+import bms.player.beatoraja.PlayerConfig;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -229,12 +230,20 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 	}
 
 	public class FourteenizerState {
+		private PlayerConfig config;
 		private static final int LANES = 16;
 		private Note[] noteHistory;
 		private LongNote[] heads;
 		private Map<Integer, Integer> permuter;
 		private java.util.Random rand;
 		private int count;
+
+
+		private final double sigmoid(double x, double tightness, double offset) {
+			final double neg = Math.exp(-tightness *  x);
+			final double pos = Math.exp( tightness * (x - 2.0*offset));
+			return 0.5 * (pos - neg) / (pos + neg) + 0.5;
+		}
 
 
 		private final boolean isScratchLane(int lane) {
@@ -280,46 +289,45 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 			return (laneTest == 15);
 		}
 
-		// Constant weight applied if the test lane is currently occupied by LN
-		// and on the same side as the target lane
-		// AVOID_LN_DODGE ~ 0 -> LN will have no effect on other notes
-		// Applied on all lanes
-		private final double AVOID_LN_DODGE = 0.8;
-		private final boolean impactLNDodge(int laneTarget, int laneTest) {
-			if ((laneTarget <= 7) != (laneTest <= 7)) {
-				return false;
-			}
-			if (heads[laneTest] != null) {
-				return true;
-			}
-			return false;
-		}
-
-		// Time since the last note in the other 56 lane on the same side
-		// Applied on "56" lanes only (indices 2, 3, 12, 13)
-		private final double AVOID_56 = 0.01;
+		// Avoid non-jack unfortunate combinations.
 		private final boolean impact56(int laneTarget, int laneTest) {
-			if (laneTarget == 1) {return (laneTest == 2);}
-			if (laneTarget == 2) {return (laneTest == 1);}
-			if (laneTarget == 12) {return (laneTest == 13);}
-			if (laneTarget == 13) {return (laneTest == 12);}
-			return false;
+			if (laneTarget == laneTest) {
+				return false;
+			}
+			return (laneTest <= 7) == (laneTarget <= 7);
 		}
-
-		// Time since the last note in adjacent lanes on the same side
-		// Applied on key lanes only
-		private final double AVOID_PILL = 1.0;
-		private final double AVOID_PILL_MIN_TIME = 0.05;
-		private final boolean impactPill(int laneTarget, int laneTest) {
-			if (isScratchLane(laneTest)) {
-				// Scratch lane cannot form a pill chord.
-				return false;
+		private final double get56Severity(int laneTarget, int laneTest) {
+			if (laneTarget < laneTest) {
+				int tmp = laneTarget;
+				laneTarget = laneTest;
+				laneTest = tmp;
 			}
-			if ((laneTarget <= 7) != (laneTest <= 7)) {
-				// Don't compare across sides.
-				return false;
+			if (laneTest > 7) {
+				laneTest = 14 - laneTest;
+				laneTarget = 14 - laneTarget;
 			}
-			return (laneTarget - laneTest) == -1 || (laneTarget - laneTest) == 1;
+			if ((laneTest + laneTarget) % 2 == 0) {
+				return 1.0;
+			}
+			if (laneTest == 1 && laneTarget == 2) {
+				return 0.1;
+			}
+			if (laneTest == 2 && laneTarget == 3) {
+				return 0.3;
+			}
+			if (laneTest == 3 && laneTarget == 4) {
+				return 0.3;
+			}
+			if (laneTest == 4 && laneTarget == 5) {
+				return 0.5;
+			}
+			if (laneTest == 1 && laneTarget == 4) {
+				return 0.7;
+			}
+			if (laneTest == 2 && laneTarget == 5) {
+				return 0.7;
+			}
+			return 0.9;
 		}
 
 		// Scaling applied to the avoid murizara constant
@@ -335,13 +343,14 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 		}
 
 		// Preference for keeping consecutive scratch notes in the same lane
-		private final double PREFER_CONSECUTIVE_SCRATCH = 0.5;
+		private final double PREFER_CONSECUTIVE_SCRATCH = 0.01;
 
 		// So you're saying there's a chance.
 		private final double MIN_PDF = 1e-24;
 
 		
-		public FourteenizerState(long seed) {
+		public FourteenizerState(long seed, PlayerConfig config) {
+			this.config = config;
 			this.noteHistory = new Note[LANES];
 			this.heads = new LongNote[LANES];
 			this.permuter = new HashMap<>();
@@ -393,42 +402,30 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 				if (isScratchLane(lane)) {
 					// Special behavior for consecutive scratch.
 					if (isScratchLane(i)) {
-						final double df = Math.exp(-PREFER_CONSECUTIVE_SCRATCH * dt);
+						final double df = sigmoid(dt, config.getCSTightness(), config.getCSOffset());
 						if (lane != i) {
+							Logger.getGlobal().info("Consecutive scratch: " + lane + " -> " + i + " (dt: " + dt + ", df: " + df + ")");
 							pdf *= df;
 						}
 						// Logger.getGlobal().info("Scratch lane: " + lane + " -> " + i + " (dt: " + dt + ", df: " + df + ")");
-					}
-					else {
-						pdf = 0.0;
 					}
 				}
 				else {
 					// Incorporate avoidance rules
 					if (impactJacks(lane, i)) {
-						final double mdf = (1.0 - Math.exp(-AVOID_JACKS * dt));
-						pdf *= mdf;
+						final double mdf = sigmoid(dt, config.getJacksTightness(), config.getJacksOffset());
+						pdf *= Math.pow(mdf, 6);	// To balance out the anti-56 effect
 						// Logger.getGlobal().info("Jack: " + lane + " -> " + i + " (mdf: " + mdf + ")");
 					}
 					if (impactMurizara(lane, i)) {
-						final double mdf = (1.0 - Math.exp(-AVOID_MURIZARA * dt) * Math.exp(-DEFINE_MURIZARA * getMurizaraDistance(i)));
+						final double mdf = sigmoid(dt, config.getMurizaraTightness(), config.getMurizaraOffset());
 						pdf *= mdf;
 						// Logger.getGlobal().info("Murizara: " + lane + " -> " + i + " (mdf: " + mdf + ")");
 					}
 					if (impact56(lane, i)) {
-						final double mdf = (1.0 - Math.exp(-AVOID_56 * dt));
+						final double mdf = sigmoid(dt * get56Severity(lane, i), config.getAnti56Tightness(), config.getAnti56Offset());
 						pdf *= mdf;
 						// Logger.getGlobal().info("56: " + lane + " -> " + i + " (mdf: " + mdf + ")");
-					}
-					if (impactPill(lane, i)) {
-						final double mdf = (1.0 - Math.exp(-AVOID_PILL * Math.max(dt, AVOID_PILL_MIN_TIME)));
-						pdf *= mdf;
-						// Logger.getGlobal().info("Knight: " + lane + " -> " + i + " (mdf: " + mdf + ")");
-					}
-					if (impactLNDodge(lane, i)) {
-						final double mdf = 1.0 - AVOID_LN_DODGE;
-						pdf *= mdf;
-						// Logger.getGlobal().info("LNDodge: " + lane + " -> " + i + " (mdf: " + mdf + ")");
 					}
 				}
 			}
@@ -623,13 +620,12 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 	}
 
 	public static class PlayerFourteenizer extends LaneShuffleModifier {
-		private FourteenizerAlgorithm algorithm = FourteenizerAlgorithm.NONE;
-		public FourteenizerAlgorithm getAlgorithm() {return this.algorithm;}
-
-		public PlayerFourteenizer(FourteenizerAlgorithm algo) {
+		private PlayerConfig config;
+		
+		public PlayerFourteenizer(PlayerConfig config) {
 			super(0, true, false);
 			setAssistLevel(AssistLevel.ASSIST);
-			this.algorithm = algo;
+			this.config = config;
 		}
 
 		protected int[] makeRandom(int[] keys, BMSModel model) {
@@ -648,7 +644,7 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 			if(keys.length == 0) {
 				return;
 			}
-			FourteenizerState stateMachine = new FourteenizerState(getSeed());
+			FourteenizerState stateMachine = new FourteenizerState(getSeed(), config);
 
 			TimeLine[] timelines = model.getAllTimeLines();
 			for (int index = 0; index < timelines.length; index++) {
