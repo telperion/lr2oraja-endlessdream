@@ -281,7 +281,7 @@ public class BMSPlayer extends MainState {
 						case BEAT_5K -> model.setMode(Mode.BEAT_10K);
 						case BEAT_7K -> model.setMode(Mode.BEAT_14K);
 					}
-					LaneShuffleModifier mod = new PlayerFourteenizer(FourteenizerAlgorithm.values()[playinfo.doubleoption - 1]);
+					LaneShuffleModifier mod = new PlayerFourteenizer(config);
 					mod.modify(model);
 					assist = Math.max(assist, 1);
 					score = false;

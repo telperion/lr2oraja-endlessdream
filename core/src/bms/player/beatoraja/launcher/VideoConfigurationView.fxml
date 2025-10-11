@@ -2,6 +2,7 @@
 <?import javafx.scene.control.ComboBox?>
 <?import javafx.scene.control.CheckBox?>
 <?import javafx.scene.control.SpinnerValueFactory.IntegerSpinnerValueFactory?>
+<?import javafx.scene.control.SpinnerValueFactory.DoubleSpinnerValueFactory?>
 <?import javafx.scene.control.Tooltip?>
 <?import javafx.scene.control.Spinner?>
 <?import bms.player.beatoraja.launcher.NumericSpinner?>
@@ -69,6 +70,60 @@
 
         <Label text="%MONITOR" GridPane.rowIndex="9" GridPane.columnIndex="0" styleClass="optionLabel"/>
         <ComboBox fx:id="monitor" GridPane.rowIndex="9" GridPane.columnIndex="1"/>
+
+        <Label text="14izer" GridPane.rowIndex="10" GridPane.columnIndex="0" GridPane.columnSpan="3" styleClass="optionHeader"/>
+
+        <Label text="Dimension" GridPane.rowIndex="11" GridPane.columnIndex="0" styleClass="optionLabel"/>
+        <Label text="Tightness" GridPane.rowIndex="11" GridPane.columnIndex="1" styleClass="optionLabel"/>
+        <Label text="Offset" GridPane.rowIndex="11" GridPane.columnIndex="2" styleClass="optionLabel"/>
+
+        <Label text="Jacks" GridPane.rowIndex="12" GridPane.columnIndex="0" styleClass="optionLabel"/>
+        <NumericSpinner fx:id="jacksTightness" editable="true" GridPane.rowIndex="12" GridPane.columnIndex="1">
+            <valueFactory>
+                <SpinnerValueFactory.DoubleSpinnerValueFactory amountToStepBy="1" initialValue="5.0" max="1000.0" min="-1000.0"/>
+            </valueFactory>
+        </NumericSpinner>
+        <NumericSpinner fx:id="jacksOffset" editable="true" GridPane.rowIndex="12" GridPane.columnIndex="2">
+            <valueFactory>
+                <SpinnerValueFactory.DoubleSpinnerValueFactory amountToStepBy="1" initialValue="0.5" max="1000.0" min="-1000.0"/>
+            </valueFactory>
+        </NumericSpinner>
+
+        <Label text="Murizara" GridPane.rowIndex="13" GridPane.columnIndex="0" styleClass="optionLabel"/>
+        <NumericSpinner fx:id="murizaraTightness" editable="true" GridPane.rowIndex="13" GridPane.columnIndex="1">
+            <valueFactory>
+                <SpinnerValueFactory.DoubleSpinnerValueFactory amountToStepBy="1" initialValue="1.0" max="1000.0" min="-1000.0"/>
+            </valueFactory>
+        </NumericSpinner>
+        <NumericSpinner fx:id="murizaraOffset" editable="true" GridPane.rowIndex="13" GridPane.columnIndex="2">
+            <valueFactory>
+                    <SpinnerValueFactory.DoubleSpinnerValueFactory amountToStepBy="1" initialValue="2.0" max="1000.0" min="-1000.0"/>
+            </valueFactory>
+        </NumericSpinner>
+
+        <Label text="Anti-56" GridPane.rowIndex="14" GridPane.columnIndex="0" styleClass="optionLabel"/>
+        <NumericSpinner fx:id="anti56Tightness" editable="true" GridPane.rowIndex="14" GridPane.columnIndex="1">
+            <valueFactory>
+                <SpinnerValueFactory.DoubleSpinnerValueFactory amountToStepBy="1" initialValue="5.0" max="1000.0" min="-1000.0"/>
+            </valueFactory>
+        </NumericSpinner>
+        <NumericSpinner fx:id="anti56Offset" editable="true" GridPane.rowIndex="14" GridPane.columnIndex="2">
+            <valueFactory>
+                <SpinnerValueFactory.DoubleSpinnerValueFactory amountToStepBy="1" initialValue="0.5" max="1000.0" min="-1000.0"/>
+            </valueFactory>
+        </NumericSpinner>
+
+        <Label text="Consecutive Scratch" GridPane.rowIndex="15" GridPane.columnIndex="0" styleClass="optionLabel"/>
+        <NumericSpinner fx:id="csTightness" editable="true" GridPane.rowIndex="15" GridPane.columnIndex="1">
+            <valueFactory>
+                <SpinnerValueFactory.DoubleSpinnerValueFactory amountToStepBy="1" initialValue="5.0" max="1000.0" min="-1000.0"/>
+            </valueFactory>
+        </NumericSpinner>
+        <NumericSpinner fx:id="csOffset" editable="true" GridPane.rowIndex="15" GridPane.columnIndex="2">
+            <valueFactory>
+                <SpinnerValueFactory.DoubleSpinnerValueFactory amountToStepBy="1" initialValue="0.5" max="1000.0" min="-1000.0"/>
+            </valueFactory>
+        </NumericSpinner>
 
         <stylesheets>
             <URL value="@LauncherStyle.css"/>

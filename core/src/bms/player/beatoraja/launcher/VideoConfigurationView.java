@@ -37,6 +37,23 @@ public class VideoConfigurationView implements Initializable {
 
 	@FXML
 	private ComboBox<String> monitor;
+	
+	@FXML
+	private Spinner<Double> jacksTightness;
+	@FXML
+	private Spinner<Double> jacksOffset;
+	@FXML
+	private Spinner<Double> murizaraTightness;
+	@FXML
+	private Spinner<Double> murizaraOffset;
+	@FXML
+	private Spinner<Double> anti56Tightness;
+	@FXML
+	private Spinner<Double> anti56Offset;
+	@FXML
+	private Spinner<Double> csTightness;
+	@FXML
+	private Spinner<Double> csOffset;
 
     @Override
     public void initialize(URL location, ResourceBundle resources) {
@@ -58,6 +75,14 @@ public class VideoConfigurationView implements Initializable {
 
 	public void updatePlayer(PlayerConfig player) {
 		missLayerTime.getValueFactory().setValue(player.getMisslayerDuration());
+		jacksTightness.getValueFactory().setValue(player.getJacksTightness());
+		jacksOffset.getValueFactory().setValue(player.getJacksOffset());
+		murizaraTightness.getValueFactory().setValue(player.getMurizaraTightness());
+		murizaraOffset.getValueFactory().setValue(player.getMurizaraOffset());
+		anti56Tightness.getValueFactory().setValue(player.getAnti56Tightness());
+		anti56Offset.getValueFactory().setValue(player.getAnti56Offset());
+		csTightness.getValueFactory().setValue(player.getCSTightness());
+		csOffset.getValueFactory().setValue(player.getCSOffset());
 	}
 
 	public void commit(Config config) {
@@ -72,6 +97,14 @@ public class VideoConfigurationView implements Initializable {
 
 	public void commitPlayer(PlayerConfig player) {
 		player.setMisslayerDuration(missLayerTime.getValue());
+		player.setJacksTightness(jacksTightness.getValue());
+		player.setJacksOffset(jacksOffset.getValue());
+		player.setMurizaraTightness(murizaraTightness.getValue());
+		player.setMurizaraOffset(murizaraOffset.getValue());
+		player.setAnti56Tightness(anti56Tightness.getValue());
+		player.setAnti56Offset(anti56Offset.getValue());
+		player.setCSTightness(csTightness.getValue());
+		player.setCSOffset(csOffset.getValue());
 	}
 
 	@FXML
