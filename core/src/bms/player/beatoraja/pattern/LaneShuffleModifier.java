@@ -302,11 +302,15 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 			final int player = (lane > 7) ? 1 : 0;
 			final int laneSide = (lane > 7) ? 14 - lane : lane;
 
+			if (isScratchLane(lane)) {
+				return;
+			}
+
 			// Remove this lane from all keys in the five-finger favorability map.
 			// Any keys reduced to 0 (no lanes) are removed from the map entirely.
 			Map<Integer, Double> fff = fiveFingerFavorability[player].entrySet().stream().map(entry -> {
-				final int key = entry.getKey();
-				final int bit = 1 << laneSide;	
+				int key = entry.getKey();
+				final int bit = 1 << laneSide;
 				if ((key & bit) == 0) {
 					// If this arrangement doesn't have the lane, we can't use it.
 					return null;
@@ -315,9 +319,11 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 					// If all this arrangement has left is the lane, we can't use it.
 					return null;
 				}
+				key &= ~bit;
 				return Map.entry(key, entry.getValue());
 			}).filter(entry -> entry != null).collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
 			fiveFingerFavorability[player] = fff;
+			Logger.getGlobal().info("Removed lane: " + lane + " from five-finger favorability for player: " + player + " (fff: " + fff + ")");
 		}
 
 		private final void fffApplyPDF(int lane, double pdf) {
