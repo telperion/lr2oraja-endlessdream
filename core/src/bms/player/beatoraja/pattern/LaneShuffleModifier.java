@@ -221,11 +221,31 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 		}
 	}
 
-	public enum FourteenizerAlgorithm {
-		NONE,
-		A,
-		B,
-		C,
+	public enum FourteenizerRegion {
+		P1_TT,
+		P1_KEY,
+		P2_KEY,
+		P2_TT,
+	}
+
+	public FourteenizerRegion l2r(int lane) {
+		if (lane == 7) {
+			return FourteenizerRegion.P1_TT;
+		}
+		if (lane == 15) {
+			return FourteenizerRegion.P2_TT;
+		}
+		if (lane < 7) {
+			return FourteenizerRegion.P1_KEY;
+		}
+		return FourteenizerRegion.P2_KEY;
+	}
+
+	public double l2pref(int lane) {
+		if (lane <= 7) {
+			return 1.0 - (lane / 6.0);
+		}
+		return (lane - 8) / 6.0;
 	}
 
 	public class FourteenizerState {
@@ -233,116 +253,172 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 		private static final int LANES = 16;
 		private Note[] noteHistory;
 		private LongNote[] heads;
+		private Map<Integer, Double>[] fiveFingerFavorability;
 		private Map<Integer, Integer> permuter;
 		private java.util.Random rand;
 		private int count;
-
-
+		
 		private final double sigmoid(double x, double tightness, double offset) {
 			final double neg = Math.exp(-tightness *  x);
 			final double pos = Math.exp( tightness * (x - 2.0*offset));
 			return 0.5 * (pos - neg) / (pos + neg) + 0.5;
 		}
 
+		private final void fffInitialize(int player) {
+			Map<Integer, Double> fff = new HashMap<>();
+			fff.put(124,    5.0); // 0,0,1,1,1,1,1
+			fff.put(122,    2.0); // 0,1,0,1,1,1,1
+			fff.put(118,    1.0); // 0,1,1,0,1,1,1
+			fff.put(110,    1.0); // 0,1,1,1,0,1,1
+			fff.put( 94,    1.0); // 0,1,1,1,1,0,1
+			fff.put( 62,    1.0); // 0,1,1,1,1,1,0
+			fff.put(121,    2.0); // 1,0,0,1,1,1,1
+			fff.put(117,    5.0); // 1,0,1,0,1,1,1
+			fff.put(109,   10.0); // 1,0,1,1,0,1,1
+			fff.put( 93,   50.0); // 1,0,1,1,1,0,1
+			fff.put( 61,   10.0); // 1,0,1,1,1,1,0
+			fff.put(115,    2.0); // 1,1,0,0,1,1,1
+			fff.put(107, 1000.0); // 1,1,0,1,0,1,1
+			fff.put( 91,   10.0); // 1,1,0,1,1,0,1
+			fff.put( 59,  100.0); // 1,1,0,1,1,1,0
+			fff.put(103,    1.0); // 1,1,1,0,0,1,1
+			fff.put( 87,    1.0); // 1,1,1,0,1,0,1
+			fff.put( 55,    1.0); // 1,1,1,0,1,1,0
+			fff.put( 79,    1.0); // 1,1,1,1,0,0,1
+			fff.put( 47,    1.0); // 1,1,1,1,0,1,0
+			fff.put( 31,    5.0); // 1,1,1,1,1,0,0
+			fff.put( 85, 1000.0); // 1,0,1,0,1,0,1
+			fff.put( 27,  700.0); // 1,1,0,1,1,0,0
+			fff.put(108,  700.0); // 0,0,1,1,0,1,1
+			fff.put(120,   50.0); // 0,0,0,1,1,1,1
+			fff.put( 60,   50.0); // 0,0,1,1,1,1,0
+			fff.put( 82,  300.0); // 0,1,0,0,1,0,1
+			fff.put( 37,  300.0); // 1,0,1,0,0,1,0
+			fiveFingerFavorability[player] = fff;
+		}
+
+		private final void fffRemoveOccupiedLane(int lane) {
+			final int player = (lane > 7) ? 1 : 0;
+			final int laneSide = (lane > 7) ? 14 - lane : lane;
+
+			// Remove this lane from all keys in the five-finger favorability map.
+			// Any keys reduced to 0 (no lanes) are removed from the map entirely.
+			Map<Integer, Double> fff = fiveFingerFavorability[player].entrySet().stream().map(entry -> {
+				final int key = entry.getKey();
+				final int bit = 1 << laneSide;	
+				if ((key & bit) == 0) {
+					// If this arrangement doesn't have the lane, we can't use it.
+					return null;
+				}
+				if ((key & ~bit) == 0) {
+					// If all this arrangement has left is the lane, we can't use it.
+					return null;
+				}
+				return Map.entry(key, entry.getValue());
+			}).filter(entry -> entry != null).collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+			fiveFingerFavorability[player] = fff;
+		}
+
+		private final void fffApplyPDF(int lane, double pdf) {
+			final int player = (lane > 7) ? 1 : 0;
+			final int laneSide = (lane > 7) ? 14 - lane : lane;
+
+			Map<Integer, Double> fff = fiveFingerFavorability[player].entrySet().stream().map(entry -> {
+				final int key = entry.getKey();
+				final int bit = 1 << laneSide;	
+				if ((key & bit) == 0) {
+					return entry;
+				}
+				return Map.entry(key, entry.getValue() * pdf);
+			}).collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+			fiveFingerFavorability[player] = fff;
+		}
+
+		private final int fffMaxLaneCount(int player) {
+			return fiveFingerFavorability[player].entrySet().stream().map(entry -> {
+				int key = entry.getKey();
+				int count = 0;
+				for (int i = 0; i < 7; i++) {
+					if ((key & (1 << i)) != 0) {
+						count++;
+					}
+				}
+				return count;
+			}).max(Comparator.naturalOrder()).orElse(0);
+		}
+
+		private final Set<Integer> fffSelect(int player, int minCount) {
+			Set<Integer> result = new HashSet<>();
+
+			// Filter out FFF options without enough lanes.
+			Map<Integer, Double> fff = fiveFingerFavorability[player].entrySet().stream().map(entry -> {
+				int key = entry.getKey();
+				int count = 0;
+				for (int i = 0; i < 7; i++) {
+					if ((key & (1 << i)) != 0) {
+						count++;
+					}
+				}
+				if (count < minCount) {
+					return null;
+				}
+				return Map.entry(key, entry.getValue());
+			}).filter(entry -> entry != null).collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+
+			// If no valid options remain after filtering, return empty set.
+			if (fff.isEmpty()) {
+				return result;
+			}
+
+			// Select from the remaining options based on their favorability.
+			double favorSum = fff.values().stream().mapToDouble(Double::doubleValue).sum();
+			if (favorSum <= 0.0) {
+				return result;
+			}
+			
+			double r = rand.nextDouble();
+			int fiveFinger = 0;
+			for (Map.Entry<Integer, Double> entry : fff.entrySet()) {
+				r -= entry.getValue() / favorSum;
+				if (r <= 0.0) {
+					fiveFinger = entry.getKey();
+					break;
+				}
+			}
+
+			// Expand the bitset into individual lanes.
+			for (int i = 0; i < 7; i++) {
+				if ((fiveFinger & (1 << i)) != 0) {
+					result.add(i);
+				}
+			}
+			return result;
+		}
+
 
 		private final boolean isScratchLane(int lane) {
-			return lane == 7 || lane == 15;
+			return l2r(lane) == FourteenizerRegion.P1_TT || l2r(lane) == FourteenizerRegion.P2_TT;
 		}
-		private final boolean isP1Lane(int lane) {
-			return (lane <= 6);
-		}
-		private final boolean isP2Lane(int lane) {
-			return (lane >= 8) && (lane <= 14);
-		}
-		private final boolean mapToP1(int lane) {
-			if (isScratchLane(lane)) {
-				return false;
-			}
-			return (lane < 3) || (lane > 11);
-		}
-		private final boolean mapToP2(int lane) {
-			if (isScratchLane(lane)) {
-				return false;
-			}
-			return (lane >= 3) && (lane <= 11);
-		}
-
-		// (1 - e^(-kt)) constants for the pdf calculation
 
 		// Time since the last note in the same lane
 		// Applied on key lanes only
-		private final double AVOID_JACKS = 0.02;
 		private final boolean impactJacks(int laneTarget, int laneTest) {
 			return (laneTarget == laneTest);
 		}
 
 		// Time since the last note in the scratch lane
 		// Applied on key lanes only
-		private final double AVOID_MURIZARA = 10.0;
 		private final boolean impactMurizara(int laneTarget, int laneTest) {
-			if (laneTarget <= 7) {
-				// Check P1 turntable.
-				return (laneTest == 7);
-			}
-			// Check P2 turntable.
-			return (laneTest == 15);
-		}
-
-		// Avoid non-jack unfortunate combinations.
-		private final boolean impact56(int laneTarget, int laneTest) {
-			if (laneTarget == laneTest) {
+			if (isScratchLane(laneTarget)) {
 				return false;
 			}
-			return (laneTest <= 7) == (laneTarget <= 7);
+			if (l2r(laneTarget) == FourteenizerRegion.P1_KEY) {
+				// Check P1 turntable.
+				return (l2r(laneTest) == FourteenizerRegion.P1_TT);
+			}
+			// Check P2 turntable.
+			return (l2r(laneTest) == FourteenizerRegion.P2_TT);
 		}
-		private final double get56Severity(int laneTarget, int laneTest) {
-			if (laneTarget < laneTest) {
-				int tmp = laneTarget;
-				laneTarget = laneTest;
-				laneTest = tmp;
-			}
-			if (laneTest > 7) {
-				laneTest = 14 - laneTest;
-				laneTarget = 14 - laneTarget;
-			}
-			if ((laneTest + laneTarget) % 2 == 0) {
-				return 1.0;
-			}
-			if (laneTest == 1 && laneTarget == 2) {
-				return 0.1;
-			}
-			if (laneTest == 2 && laneTarget == 3) {
-				return 0.3;
-			}
-			if (laneTest == 3 && laneTarget == 4) {
-				return 0.3;
-			}
-			if (laneTest == 4 && laneTarget == 5) {
-				return 0.5;
-			}
-			if (laneTest == 1 && laneTarget == 4) {
-				return 0.7;
-			}
-			if (laneTest == 2 && laneTarget == 5) {
-				return 0.7;
-			}
-			return 0.9;
-		}
-
-		// Scaling applied to the avoid murizara constant
-		// (1 - e^(-kt)*e^(-kl)), l = lanes between scratch lane and target lane
-		// e.g. lane 14 -> l=0, lane 12 -> l=2
-		// DEFINE_MURIZARA ~ 0 -> all lanes are treated equally for murizara
-		private final double DEFINE_MURIZARA = 0.0;
-		private final int getMurizaraDistance(int laneTarget) {
-			if (laneTarget <= 7) {
-				return 7 - laneTarget;
-			}
-			return 15 - laneTarget;
-		}
-
-		// Preference for keeping consecutive scratch notes in the same lane
-		private final double PREFER_CONSECUTIVE_SCRATCH = 0.01;
 
 		// So you're saying there's a chance.
 		private final double MIN_PDF = 1e-24;
@@ -353,6 +429,11 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 			this.noteHistory = new Note[LANES];
 			this.heads = new LongNote[LANES];
 			this.permuter = new HashMap<>();
+			this.fiveFingerFavorability = new Map[2];
+			this.fiveFingerFavorability[0] = new HashMap<>();
+			this.fiveFingerFavorability[1] = new HashMap<>();
+			this.fffInitialize(0);
+			this.fffInitialize(1);
 			this.rand = new java.util.Random(seed);
 			this.count = 0;
 		}
@@ -385,9 +466,11 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 				// Calculate the time since the last note in the test lane.
 				double dt = 0.0;
 				if (heads[i] != null) {
+					// Should already be resolved by FFF filtering.
 					dt = 0.0;
 				}
 				else if (permuter.containsValue(i)) {
+					// Should already be resolved by FFF filtering.
 					dt = 0.0;
 				}
 				else if (noteHistory[i] != null) {
@@ -408,27 +491,52 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 						}
 						// Logger.getGlobal().info("Scratch lane: " + lane + " -> " + i + " (dt: " + dt + ", df: " + df + ")");
 					}
+					// Incorporate murizara
+					if (impactMurizara(i, lane)) {
+						final double mdf = sigmoid(dt, config.getMurizaraTightness(), config.getMurizaraOffset());
+						pdf *= mdf;
+						// Logger.getGlobal().info("Murizara: " + lane + " -> " + i + " (mdf: " + mdf + ")");
+					}
 				}
 				else {
-					// Incorporate avoidance rules
+					// Incorporate local key repetition into five-finger favorability
 					if (impactJacks(lane, i)) {
 						final double mdf = sigmoid(dt, config.getJacksTightness(), config.getJacksOffset());
-						pdf *= Math.pow(mdf, 6);	// To balance out the anti-56 effect
+						pdf *= mdf;
 						// Logger.getGlobal().info("Jack: " + lane + " -> " + i + " (mdf: " + mdf + ")");
 					}
+					// Incorporate murizara
 					if (impactMurizara(lane, i)) {
 						final double mdf = sigmoid(dt, config.getMurizaraTightness(), config.getMurizaraOffset());
 						pdf *= mdf;
 						// Logger.getGlobal().info("Murizara: " + lane + " -> " + i + " (mdf: " + mdf + ")");
 					}
-					if (impact56(lane, i)) {
-						final double mdf = sigmoid(dt * get56Severity(lane, i), config.getAnti56Tightness(), config.getAnti56Offset());
-						pdf *= mdf;
-						// Logger.getGlobal().info("56: " + lane + " -> " + i + " (mdf: " + mdf + ")");
-					}
 				}
+
 			}
 			return Math.max(pdf, MIN_PDF);
+		}
+
+
+		public boolean lastScratchWasOnP2() {
+			if (permuter.containsValue(7)) {
+				return false;
+			}
+			if (permuter.containsValue(15)) {
+				return true;
+			}
+
+			if (noteHistory[7] == null) {
+				return true;
+			}
+			if (noteHistory[15] == null) {
+				return false;
+			}
+
+			if (noteHistory[7].getTime() > noteHistory[15].getTime()) {
+				return false;
+			}
+			return true;
 		}
 
 		public void protectLN() {
@@ -437,6 +545,7 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 					// Make sure the lane appears as a value in the permuter without assigning it a legal key.
 					Logger.getGlobal().info("Protecting LN: " + i);
 					permuter.put(1000+i, i);
+					fffRemoveOccupiedLane(i);
 				}
 			}
 		}
@@ -456,6 +565,7 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 							heads[laneHead] = null;
 							Logger.getGlobal().info("Resolving LN: " + i + " -> " + laneHead);
 							permuter.put(i, laneHead);
+							fffRemoveOccupiedLane(laneHead);
 							break;
 						}
 					}
@@ -463,43 +573,68 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 			}
 		}
 
-		public boolean randomizeSpecificLanes(Set<Integer> lanesFrom, long time) {
-			if (lanesFrom.size() == 0) {
+		public void applyPDF(long time) {
+			for (int i = 0; i < LANES; i++) {
+				if (!isScratchLane(i)) {
+					fffApplyPDF(i, pdf(i, time));
+				}
+			}
+		}
+
+		// Return true if the scratch was mapped successfully to another scratch lane.
+		private boolean mapScratch(Set<Integer> lanes, long time) {
+			long scratchCount = lanes.stream().filter(this::isScratchLane).count();
+
+			if (scratchCount == 0) {
 				return true;
 			}
 
-			// What lanes are up for consideration?
-			boolean incorporateP1Lanes = lanesFrom.stream().anyMatch(this::mapToP1);
-			boolean incorporateP2Lanes = lanesFrom.stream().anyMatch(this::mapToP2);
-			boolean incorporateScratchLanes = lanesFrom.stream().anyMatch(this::isScratchLane);
+			boolean noMapToP1 = lanes.size() - 1 > fffMaxLaneCount(0);
+			boolean noMapToP2 = lanes.size() - 1 > fffMaxLaneCount(1);
 
+			if (noMapToP1 && noMapToP2) {
+				return false;
+			}
+			if (noMapToP1) {
+				permuter.put(7, 15);
+				permuter.put(15, 15);
+				return true;
+			}
+			if (noMapToP2) {
+				permuter.put(7, 7);
+				permuter.put(15, 7);
+				return true;
+			}
+
+			double pdf_P1 = pdf(7, time);
+			double pdf_P2 = pdf(15, time);
+			double sum = pdf_P1 + pdf_P2;
+			// Logger.getGlobal().info("PDF_P1: " + pdf_P1 + ", PDF_P2: " + pdf_P2 + ", Sum: " + sum);
+			if (sum <= 0.0) {
+				return false;
+			}
+			if (rand.nextDouble() * sum < pdf_P1) {
+				permuter.put(7, 7);
+				permuter.put(15, 7);
+				return true;
+			}
+			permuter.put(7, 15);
+			permuter.put(15, 15);
+			return true;
+		}
+
+		private boolean mapKeySubset(Set<Integer> lanesFrom, Set<Integer> lanesTo, long time) {
 			// Calculate PDF list
 			List<Double> pdfList = new ArrayList<>();
 			List<Integer> pdfLanes = new ArrayList<>();
 			for (int i = 0; i < LANES; i++) {
 				pdfLanes.add(i);
-				if (permuter.containsValue(i)) {
+				if (!lanesTo.contains(i)) {
 					pdfList.add(0.0);
 					continue;
 				}
-				if (permuter.containsValue(7)) {
-					pdfList.add(isP2Lane(i) ? pdf(i, time) : 0.0);
-					continue;
-				}
-				if (permuter.containsValue(15)) {
-					pdfList.add(isP1Lane(i) ? pdf(i, time) : 0.0);
-					continue;
-				}
-				if (isScratchLane(i)) {
-					pdfList.add(incorporateScratchLanes ? pdf(i, time) : 0.0);
-					continue;
-				}
-				if (isP1Lane(i)) {
-					pdfList.add(incorporateP1Lanes ? pdf(i, time) : 0.0);
-					continue;
-				}
-				if (isP2Lane(i)) {
-					pdfList.add(incorporateP2Lanes ? pdf(i, time) : 0.0);
+				if (permuter.containsValue(i)) {
+					pdfList.add(0.0);
 					continue;
 				}
 				pdfList.add(pdf(i, time));
@@ -532,6 +667,60 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 				}
 			}
 			return true;
+		}
+
+		public boolean mapKeys(Set<Integer> lanesFrom, long time) {
+			if (lanesFrom.size() == 0) {
+				return true;
+			}
+
+			Set<Integer> preferP1 = new HashSet<>();
+			Set<Integer> preferP2 = new HashSet<>();
+			// Logger.getGlobal().info("Mapping keys: " + lanesFrom + " using permuter: " + permuter);
+			for (int lane : lanesFrom) {
+				if (permuter.containsValue(7)) {
+					preferP2.add(lane);
+					continue;
+				}
+				if (permuter.containsValue(15)) {
+					preferP1.add(lane);
+					continue;
+				}
+				if (rand.nextDouble() > sigmoid(
+					lastScratchWasOnP2() ? l2pref(lane) : 1.0 - l2pref(lane),
+					5.0, 
+					0.5
+				)) {
+					preferP2.add(lane);
+					continue;
+				}
+				preferP1.add(lane);
+			}
+			int maxP1 = fffMaxLaneCount(0);
+			int maxP2 = fffMaxLaneCount(1);
+			if (preferP1.size() + preferP2.size() > maxP1 + maxP2) {
+				Logger.getGlobal().info("Too many lanes to map: " + lanesFrom + " (preferP1: " + preferP1 + ", preferP2: " + preferP2 + ", maxP1: " + maxP1 + ", maxP2: " + maxP2 + ")");
+				return false;
+			}
+			// Logger.getGlobal().info("PreferP1: " + preferP1 + " (size: " + preferP1.size() + ") vs. maxP1: " + maxP1);
+			// Logger.getGlobal().info("PreferP2: " + preferP2 + " (size: " + preferP2.size() + ") vs. maxP2: " + maxP2);
+			for (int i = 0; i < preferP1.size() - maxP1; i++) {
+				preferP2.add(preferP1.iterator().next());
+				preferP1.remove(preferP1.iterator().next());
+			}
+			for (int i = 0; i < preferP2.size() - maxP2; i++) {
+				preferP1.add(preferP2.iterator().next());
+				preferP2.remove(preferP2.iterator().next());
+			}
+
+			// Pick five-finger arrangements.
+			Set<Integer> fffP1 = fffSelect(0, preferP1.size());
+			Set<Integer> fffP2 = fffSelect(1, preferP2.size()).stream().map(i -> 14 - i).collect(Collectors.toSet());
+
+			return (
+				mapKeySubset(preferP1, fffP1, time) &&
+				mapKeySubset(preferP2, fffP2, time)
+			);
 		}
 
 		public void performPermutation(TimeLine tl) {
@@ -583,8 +772,12 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 
 		public void process(TimeLine tl) {
 			Logger.getGlobal().info("Processing TL: " + tl.getTime());
+
+			fffInitialize(0);
+			fffInitialize(1);
 			protectLN();
 			resolveLN(tl);
+			applyPDF(tl.getTime());
 
 			Set<Integer> hasNote = new HashSet<>();
 			for (int i = 0; i < LANES; i++) {
@@ -597,21 +790,10 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 				hasNote.add(i);
 			}
 
-			Set<Integer> scratchLanes = new HashSet<>(Set.of(7, 15));
-			scratchLanes.retainAll(hasNote);
-			randomizeSpecificLanes(scratchLanes, tl.getTime());
-
-			Set<Integer> mapToP1Lanes = new HashSet<>(Set.of(0, 1, 2, 12, 13, 14));
-			mapToP1Lanes.retainAll(hasNote);
-			for (int lane : mapToP1Lanes) {
-				randomizeSpecificLanes(Set.of(lane), tl.getTime());
+			if (mapScratch(hasNote, tl.getTime())) {
+				hasNote.removeAll(Set.of(7, 15));
 			}
-
-			Set<Integer> mapToP2Lanes = new HashSet<>(Set.of(3, 4, 5, 6, 8, 9, 10, 11));
-			mapToP2Lanes.retainAll(hasNote);
-			for (int lane : mapToP2Lanes) {
-				randomizeSpecificLanes(Set.of(lane), tl.getTime());
-			}
+			mapKeys(hasNote, tl.getTime());
 
 			performPermutation(tl);
 			updateState(tl);
