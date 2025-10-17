@@ -12,6 +12,7 @@ import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Spinner;
 import javafx.util.Pair;
+import javafx.util.StringConverter;
 
 import java.net.URL;
 import java.util.Arrays;
@@ -39,21 +40,25 @@ public class VideoConfigurationView implements Initializable {
 	private ComboBox<String> monitor;
 	
 	@FXML
-	private Spinner<Double> jacksTightness;
+	private Spinner<Double> hranInverseTime;
+	@FXML
+	private Spinner<Double> hranOffset;
+	@FXML
+	private Spinner<Double> jacksInverseTime;
 	@FXML
 	private Spinner<Double> jacksOffset;
 	@FXML
-	private Spinner<Double> murizaraTightness;
+	private Spinner<Double> murizaraInverseTime;
 	@FXML
 	private Spinner<Double> murizaraOffset;
 	@FXML
-	private Spinner<Double> anti56Tightness;
-	@FXML
-	private Spinner<Double> anti56Offset;
-	@FXML
-	private Spinner<Double> csTightness;
+	private Spinner<Double> csInverseTime;
 	@FXML
 	private Spinner<Double> csOffset;
+	@FXML
+	private Spinner<Integer> scratchReallocationThreshold;
+	@FXML
+	private Spinner<Integer> avoidLNFactor;
 
     @Override
     public void initialize(URL location, ResourceBundle resources) {
@@ -75,14 +80,16 @@ public class VideoConfigurationView implements Initializable {
 
 	public void updatePlayer(PlayerConfig player) {
 		missLayerTime.getValueFactory().setValue(player.getMisslayerDuration());
-		jacksTightness.getValueFactory().setValue(player.getJacksTightness());
+		hranInverseTime.getValueFactory().setValue(player.getHranInverseTime());
+		hranOffset.getValueFactory().setValue(player.getHranOffset());
+		jacksInverseTime.getValueFactory().setValue(player.getJacksInverseTime());
 		jacksOffset.getValueFactory().setValue(player.getJacksOffset());
-		murizaraTightness.getValueFactory().setValue(player.getMurizaraTightness());
+		murizaraInverseTime.getValueFactory().setValue(player.getMurizaraInverseTime());
 		murizaraOffset.getValueFactory().setValue(player.getMurizaraOffset());
-		anti56Tightness.getValueFactory().setValue(player.getAnti56Tightness());
-		anti56Offset.getValueFactory().setValue(player.getAnti56Offset());
-		csTightness.getValueFactory().setValue(player.getCSTightness());
+		csInverseTime.getValueFactory().setValue(player.getCSInverseTime());
 		csOffset.getValueFactory().setValue(player.getCSOffset());
+		scratchReallocationThreshold.getValueFactory().setValue(player.getScratchReallocationThreshold());
+		avoidLNFactor.getValueFactory().setValue(player.getAvoidLNFactor());
 	}
 
 	public void commit(Config config) {
@@ -97,14 +104,16 @@ public class VideoConfigurationView implements Initializable {
 
 	public void commitPlayer(PlayerConfig player) {
 		player.setMisslayerDuration(missLayerTime.getValue());
-		player.setJacksTightness(jacksTightness.getValue());
+		player.setHranInverseTime(hranInverseTime.getValue());
+		player.setHranOffset(hranOffset.getValue());
+		player.setJacksInverseTime(jacksInverseTime.getValue());
 		player.setJacksOffset(jacksOffset.getValue());
-		player.setMurizaraTightness(murizaraTightness.getValue());
+		player.setMurizaraInverseTime(murizaraInverseTime.getValue());
 		player.setMurizaraOffset(murizaraOffset.getValue());
-		player.setAnti56Tightness(anti56Tightness.getValue());
-		player.setAnti56Offset(anti56Offset.getValue());
-		player.setCSTightness(csTightness.getValue());
+		player.setCSInverseTime(csInverseTime.getValue());
 		player.setCSOffset(csOffset.getValue());
+		player.setScratchReallocationThreshold(scratchReallocationThreshold.getValue());
+		player.setAvoidLNFactor(avoidLNFactor.getValue());
 	}
 
 	@FXML
