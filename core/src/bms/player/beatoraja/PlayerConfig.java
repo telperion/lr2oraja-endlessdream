@@ -252,14 +252,16 @@ public final class PlayerConfig {
 	private boolean notifyRequest = false;
 	private int maxRequestCount = 30;
 
-	private double jacksTightness = 5.0;
-	private double jacksOffset = 0.5;
-	private double murizaraTightness = 1.0;
-	private double murizaraOffset = 2.0;
-	private double anti56Tightness = 5.0;
-	private double anti56Offset = 0.5;
-	private double csTightness = 0.01;
-	private double csOffset = 0.0;
+	private double hranInverseTime = 1.0;
+	private double hranOffset = 1.0;
+	private double jacksInverseTime = 1.0;
+	private double jacksOffset = 1.0;
+	private double murizaraInverseTime = 2.0;
+	private double murizaraOffset = 3.0;
+	private double csInverseTime = 5.0;
+	private double csOffset = 1.0;
+	private int scratchReallocationThreshold = 4;
+	private int avoidLNFactor = 1;
 
 	public PlayerConfig() {
 		validate();
@@ -809,11 +811,23 @@ public final class PlayerConfig {
     }
 	
 
-	public double getJacksTightness() {
-		return jacksTightness;
+	public double getHranInverseTime() {
+		return hranInverseTime;
 	}
-	public void setJacksTightness(double jacksTightness) {
-		this.jacksTightness = jacksTightness;
+	public void setHranInverseTime(double hranInverseTime) {
+		this.hranInverseTime = hranInverseTime;
+	}
+	public double getHranOffset() {
+		return hranOffset;
+	}
+	public void setHranOffset(double hranOffset) {
+		this.hranOffset = hranOffset;
+	}
+	public double getJacksInverseTime() {
+		return jacksInverseTime;
+	}
+	public void setJacksInverseTime(double jacksInverseTime) {
+		this.jacksInverseTime = jacksInverseTime;
 	}
 	public double getJacksOffset() {
 		return jacksOffset;
@@ -821,11 +835,11 @@ public final class PlayerConfig {
 	public void setJacksOffset(double jacksOffset) {
 		this.jacksOffset = jacksOffset;
 	}
-	public double getMurizaraTightness() {
-		return murizaraTightness;
+	public double getMurizaraInverseTime() {
+		return murizaraInverseTime;
 	}
-	public void setMurizaraTightness(double murizaraTightness) {
-		this.murizaraTightness = murizaraTightness;
+	public void setMurizaraInverseTime(double murizaraInverseTime) {
+		this.murizaraInverseTime = murizaraInverseTime;
 	}
 	public double getMurizaraOffset() {
 		return murizaraOffset;
@@ -833,33 +847,29 @@ public final class PlayerConfig {
 	public void setMurizaraOffset(double murizaraOffset) {
 		this.murizaraOffset = murizaraOffset;
 	}
-	public double getAnti56Tightness() {
-		return anti56Tightness;
+	public double getCSInverseTime() {
+		return csInverseTime;
 	}
-	public void setAnti56Tightness(double anti56Tightness) {
-		this.anti56Tightness = anti56Tightness;
+	public void setCSInverseTime(double csInverseTime) {
+		this.csInverseTime = csInverseTime;
 	}
-	public double getAnti56Offset() {
-		return anti56Offset;
-	}
-	public void setAnti56Offset(double anti56Offset) {
-		this.anti56Offset = anti56Offset;
-	}
-
-	public double getCSTightness() {
-		return csTightness;
-	}
-
-	public void setCSTightness(double csTightness) {
-		this.csTightness = csTightness;
-	}
-
 	public double getCSOffset() {
 		return csOffset;
 	}
-
 	public void setCSOffset(double csOffset) {
 		this.csOffset = csOffset;
+	}
+	public int getScratchReallocationThreshold() {
+		return scratchReallocationThreshold;
+	}
+	public void setScratchReallocationThreshold(int scratchReallocationThreshold) {
+		this.scratchReallocationThreshold = scratchReallocationThreshold;
+	}
+	public int getAvoidLNFactor() {
+		return avoidLNFactor;
+	}
+	public void setAvoidLNFactor(int avoidLNFactor) {
+		this.avoidLNFactor = avoidLNFactor;
 	}
 
 	public void validate() {
@@ -975,14 +985,16 @@ public final class PlayerConfig {
 		maxRequestCount = MathUtils.clamp(maxRequestCount, 0, 100);
 		
 		// --14izer
-		jacksTightness = MathUtils.clamp(jacksTightness, -1000.0, 1000.0);
-		jacksOffset = MathUtils.clamp(jacksOffset, -1000.0, 1000.0);
-		murizaraTightness = MathUtils.clamp(murizaraTightness, -1000.0, 1000.0);
-		murizaraOffset = MathUtils.clamp(murizaraOffset, -1000.0, 1000.0);
-		anti56Tightness = MathUtils.clamp(anti56Tightness, -1000.0, 1000.0);
-		anti56Offset = MathUtils.clamp(anti56Offset, -1000.0, 1000.0);
-		csTightness = MathUtils.clamp(csTightness, -1000.0, 1000.0);
-		csOffset = MathUtils.clamp(csOffset, -1000.0, 1000.0);
+		hranInverseTime = MathUtils.clamp(hranInverseTime, 0.1, 1000.0);
+		hranOffset = MathUtils.clamp(hranOffset, 0.0, 10.0);
+		jacksInverseTime = MathUtils.clamp(jacksInverseTime, 0.1, 1000.0);
+		jacksOffset = MathUtils.clamp(jacksOffset, 0.0, 10.0);
+		murizaraInverseTime = MathUtils.clamp(murizaraInverseTime, 0.1, 1000.0);
+		murizaraOffset = MathUtils.clamp(murizaraOffset, 0.0, 10.0);
+		csInverseTime = MathUtils.clamp(csInverseTime, 0.1, 1000.0);
+		csOffset = MathUtils.clamp(csOffset, 0.0, 10.0);
+		scratchReallocationThreshold = MathUtils.clamp(scratchReallocationThreshold, 0, 7);
+		avoidLNFactor = MathUtils.clamp(avoidLNFactor, 0, 5);
 	}
 
 	public static void init(Config config) throws PlayerConfigException {

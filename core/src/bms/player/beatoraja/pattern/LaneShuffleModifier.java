@@ -223,6 +223,7 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 	}
 
 	public enum FourteenizerRegion {
+		NONE,
 		P1_TT,
 		P1_KEY,
 		P2_KEY,
@@ -250,19 +251,53 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 	}
 
 	public class FourteenizerState {
+		private BMSModel model;
 		private PlayerConfig config;
 		private static final int LANES = 16;
 		private Note[] noteHistory;
 		private LongNote[] heads;
+		private Integer[] lastSourceLane;
 		private Map<Integer, Double>[] fiveFingerFavorability;
 		private Map<Integer, Integer> permuter;
 		private java.util.Random rand;
 		private int count;
 		
-		private final double sigmoid(double x, double tightness, double offset) {
+		private final double sigmoid(double x, double time_to_inverse, double offset_at_zero) {
+			final double decimality = Math.pow(10.0, -offset_at_zero);
+			final double tightness = Math.log((1.0 - decimality) / decimality) / time_to_inverse;
 			final double neg = Math.exp(-tightness *  x);
-			final double pos = Math.exp( tightness * (x - 2.0*offset));
+			final double pos = Math.exp( tightness * (x - time_to_inverse));
 			return 0.5 * (pos - neg) / (pos + neg) + 0.5;
+		}
+
+		private final int levenshteinDistance(String s1, String s2) {
+			int[][] dp = new int[s1.length() + 1][s2.length() + 1];
+			for (int i = 0; i <= s1.length(); i++) {
+				dp[i][0] = i;
+			}
+			for (int j = 0; j <= s2.length(); j++) {
+				dp[0][j] = j;
+			}
+			for (int i = 1; i <= s1.length(); i++) {
+				for (int j = 1; j <= s2.length(); j++) {
+					dp[i][j] = Math.min(dp[i-1][j-1] + (s1.charAt(i-1) == s2.charAt(j-1) ? 0 : 1), Math.min(dp[i-1][j] + 1, dp[i][j-1] + 1));
+				}
+			}
+			return dp[s1.length()][s2.length()];
+		}
+
+		private final double levenshteinDistance(Note n1, Note n2) {
+			if (n1 == null || n2 == null) {
+				return 1.0;
+			}
+			int w1 = n1.getWav();
+			int w2 = n2.getWav();
+			if (w1 < 0 || w2 < 0) {
+				return 1.0;
+			}
+			String fn1 = model.getWavList()[w1];
+			String fn2 = model.getWavList()[w2];
+			return ((double) levenshteinDistance(fn1, fn2)) / Math.max(fn1.length(), fn2.length());
 		}
 
 		private final void fffInitialize(int player) {
@@ -431,10 +466,12 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 		private final double MIN_PDF = 1e-24;
 
 		
-		public FourteenizerState(long seed, PlayerConfig config) {
+		public FourteenizerState(long seed, PlayerConfig config, BMSModel model) {
 			this.config = config;
+			this.model = model;
 			this.noteHistory = new Note[LANES];
 			this.heads = new LongNote[LANES];
+			this.lastSourceLane = new Integer[LANES];
 			this.permuter = new HashMap<>();
 			this.fiveFingerFavorability = new Map[2];
 			this.fiveFingerFavorability[0] = new HashMap<>();
@@ -491,32 +528,32 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 				if (isScratchLane(lane)) {
 					// Special behavior for consecutive scratch.
 					if (isScratchLane(i)) {
-						final double df = sigmoid(dt, config.getCSTightness(), config.getCSOffset());
+						final double df = sigmoid(dt, config.getCSInverseTime(), config.getCSOffset());
 						if (lane != i) {
 							Logger.getGlobal().info("Consecutive scratch: " + lane + " -> " + i + " (dt: " + dt + ", df: " + df + ")");
 							pdf *= df;
 						}
-						// Logger.getGlobal().info("Scratch lane: " + lane + " -> " + i + " (dt: " + dt + ", df: " + df + ")");
+						Logger.getGlobal().info("Scratch lane: " + lane + " -> " + i + " (dt: " + dt + ", df: " + df + ")");
 					}
 					// Incorporate murizara
 					if (impactMurizara(i, lane)) {
-						final double mdf = sigmoid(dt, config.getMurizaraTightness(), config.getMurizaraOffset());
+						final double mdf = sigmoid(dt, config.getMurizaraInverseTime(), config.getMurizaraOffset());
 						pdf *= mdf;
-						// Logger.getGlobal().info("Murizara: " + lane + " -> " + i + " (mdf: " + mdf + ")");
+						Logger.getGlobal().info("Murizara: " + lane + " -> " + i + " (mdf: " + mdf + ")");
 					}
 				}
 				else {
 					// Incorporate local key repetition into five-finger favorability
 					if (impactJacks(lane, i)) {
-						final double mdf = sigmoid(dt, config.getJacksTightness(), config.getJacksOffset());
+						final double mdf = sigmoid(dt, config.getJacksInverseTime(), config.getJacksOffset());
 						pdf *= mdf;
-						// Logger.getGlobal().info("Jack: " + lane + " -> " + i + " (mdf: " + mdf + ")");
+						Logger.getGlobal().info("Jack: " + lane + " -> " + i + " (mdf: " + mdf + ")");
 					}
 					// Incorporate murizara
 					if (impactMurizara(lane, i)) {
-						final double mdf = sigmoid(dt, config.getMurizaraTightness(), config.getMurizaraOffset());
+						final double mdf = sigmoid(dt, config.getMurizaraInverseTime(), config.getMurizaraOffset());
 						pdf *= mdf;
-						// Logger.getGlobal().info("Murizara: " + lane + " -> " + i + " (mdf: " + mdf + ")");
+						Logger.getGlobal().info("Murizara: " + lane + " -> " + i + " (mdf: " + mdf + ")");
 					}
 				}
 
@@ -580,6 +617,47 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 			}
 		}
 
+		public void applyHnessOfRandom(TimeLine tl) {
+			if (preferRegion(tl.getTime()) != FourteenizerRegion.NONE) {
+				return;
+			}
+
+			Note[] notes = new Note[LANES];
+			Note[] hnotes = new Note[LANES];
+			for (int i = 0; i < LANES; i++) {
+				notes[i] = tl.getNote(i);
+				hnotes[i] = tl.getHiddenNote(i);
+			}
+
+			for (int i = 0; i < LANES; i++) {
+				if (isScratchLane(i)) {
+					continue;
+				}
+				if (noteHistory[i] == null || lastSourceLane[i] == null) {
+					continue;
+				}
+				final int ls = lastSourceLane[i];
+				Note lastSourceNote = notes[ls];
+				if (lastSourceNote == null) {
+					lastSourceNote = hnotes[ls];
+				}
+				if (lastSourceNote == null) {
+					continue;
+				}
+
+				final double ld = levenshteinDistance(noteHistory[i], lastSourceNote);
+				double dt = tl.getTime() - noteHistory[i].getTime();
+				dt /= 1000.0;
+				final double hdf = sigmoid(dt * Math.exp(-ld), config.getHranInverseTime(), config.getHranOffset());
+				if (rand.nextDouble() > hdf) {
+					// Re-use the last mapping of notes in this lane.
+					Logger.getGlobal().info("Low H-ness of Random: " + i + " -> " + lastSourceLane[i] + " (dt: " + dt + ", ld: " + ld + ", hdf: " + hdf + ")");
+					permuter.put(i, lastSourceLane[i]);
+					fffRemoveOccupiedLane(lastSourceLane[i]);
+				}
+			}
+		}
+
 		public void applyPDF(long time) {
 			for (int i = 0; i < LANES; i++) {
 				if (!isScratchLane(i)) {
@@ -588,12 +666,78 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 			}
 		}
 
+		private double murizaraPDF(int lane, long time) {
+			if (noteHistory[lane] == null) {
+				return 1.0;
+			}
+			final double dt = (time - noteHistory[lane].getTime()) / 1000.0;
+			return sigmoid(dt, config.getMurizaraInverseTime(), config.getMurizaraOffset());
+		}
+
+		private FourteenizerRegion meetsThreshold(double thresholdP1, double thresholdP2) {
+			double test = rand.nextDouble();
+			if (test < thresholdP1 && test >= thresholdP2) {
+				return FourteenizerRegion.P1_KEY;
+			}
+			if (test < thresholdP2 && test >= thresholdP1) {
+				return FourteenizerRegion.P2_KEY;
+			}
+			return FourteenizerRegion.NONE;
+		}
+
+		private FourteenizerRegion preferRegion(long time) {
+			// Scratch on the same timeline? Absolutely not.
+			if (permuter.containsValue(7)) {
+				return FourteenizerRegion.P2_KEY;
+			}
+			if (permuter.containsValue(15)) {
+				return FourteenizerRegion.P1_KEY;
+			}
+			
+			// If one side's murizara PDF triggers, avoid that side.
+			FourteenizerRegion murizaraRegion = meetsThreshold(
+				murizaraPDF(7, time),
+				murizaraPDF(15, time)
+			);
+			if (murizaraRegion != FourteenizerRegion.NONE) {
+				return murizaraRegion;
+			}
+
+			// If one side has more active LNs, avoid that side.
+			int activeLNCountP1 = 0;
+			int activeLNCountP2 = 0;
+			for (int i = 0; i < 7; i++) {
+				if (heads[i] != null) {
+					activeLNCountP1++;
+				}
+			}
+			for (int i = 7; i < 15; i++) {
+				if (heads[i] != null) {
+					activeLNCountP2++;
+				}
+			}
+			FourteenizerRegion antiLNRegion = meetsThreshold(
+				Math.exp(-activeLNCountP1*config.getAvoidLNFactor()),
+				Math.exp(-activeLNCountP2*config.getAvoidLNFactor())
+			);
+			if (antiLNRegion != FourteenizerRegion.NONE) {
+				return antiLNRegion;
+			}
+
+			// Otherwise, choose randomly.
+			return FourteenizerRegion.NONE;
+		}
+
 		// Return true if the scratch was mapped successfully to another scratch lane.
 		private boolean mapScratch(Set<Integer> lanes, long time) {
 			long scratchCount = lanes.stream().filter(this::isScratchLane).count();
 
 			if (scratchCount == 0) {
 				return true;
+			}
+
+			if (lanes.size() - scratchCount > config.getScratchReallocationThreshold()) {
+				return false;
 			}
 
 			boolean noMapToP1 = lanes.size() - 1 > fffMaxLaneCount(0);
@@ -685,19 +829,16 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 			Set<Integer> preferP2 = new HashSet<>();
 			// Logger.getGlobal().info("Mapping keys: " + lanesFrom + " using permuter: " + permuter);
 			for (int lane : lanesFrom) {
-				if (permuter.containsValue(7)) {
-					preferP2.add(lane);
-					continue;
-				}
-				if (permuter.containsValue(15)) {
+				FourteenizerRegion region = preferRegion(time);
+				if (region == FourteenizerRegion.P1_KEY) {
 					preferP1.add(lane);
 					continue;
 				}
-				if (rand.nextDouble() > sigmoid(
-					lastScratchWasOnP2() ? l2pref(lane) : 1.0 - l2pref(lane),
-					5.0, 
-					0.5
-				)) {
+				if (region == FourteenizerRegion.P2_KEY) {
+					preferP2.add(lane);
+					continue;
+				}
+				if (preferP1.size() > preferP2.size()) {
 					preferP2.add(lane);
 					continue;
 				}
@@ -748,6 +889,7 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 					Logger.getGlobal().info("Setting note: " + i + " -> " + mapped);
 					tl.setNote(mapped, notes[i]);
 					tl.setHiddenNote(mapped, hnotes[i]);
+					lastSourceLane[mapped] = i;
 				}
 			}
 
@@ -784,6 +926,7 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 			fffInitialize(1);
 			protectLN();
 			resolveLN(tl);
+			applyHnessOfRandom(tl);
 			applyPDF(tl.getTime());
 
 			Set<Integer> hasNote = new HashSet<>();
@@ -832,7 +975,7 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 			if(keys.length == 0) {
 				return;
 			}
-			FourteenizerState stateMachine = new FourteenizerState(getSeed(), config);
+			FourteenizerState stateMachine = new FourteenizerState(getSeed(), config, model);
 
 			TimeLine[] timelines = model.getAllTimeLines();
 			for (int index = 0; index < timelines.length; index++) {
