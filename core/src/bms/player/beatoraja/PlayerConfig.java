@@ -252,17 +252,6 @@ public final class PlayerConfig {
 	private boolean notifyRequest = false;
 	private int maxRequestCount = 30;
 
-	private double hranInverseTime = 1.0;
-	private double hranOffset = 1.0;
-	private double jacksInverseTime = 1.0;
-	private double jacksOffset = 1.0;
-	private double murizaraInverseTime = 2.0;
-	private double murizaraOffset = 3.0;
-	private double csInverseTime = 5.0;
-	private double csOffset = 1.0;
-	private int scratchReallocationThreshold = 4;
-	private int avoidLNFactor = 1;
-
 	public PlayerConfig() {
 		validate();
 	}
@@ -809,68 +798,6 @@ public final class PlayerConfig {
     public void setMaxRequestCount(int maxRequestCount) {
         this.maxRequestCount = maxRequestCount;
     }
-	
-
-	public double getHranInverseTime() {
-		return hranInverseTime;
-	}
-	public void setHranInverseTime(double hranInverseTime) {
-		this.hranInverseTime = hranInverseTime;
-	}
-	public double getHranOffset() {
-		return hranOffset;
-	}
-	public void setHranOffset(double hranOffset) {
-		this.hranOffset = hranOffset;
-	}
-	public double getJacksInverseTime() {
-		return jacksInverseTime;
-	}
-	public void setJacksInverseTime(double jacksInverseTime) {
-		this.jacksInverseTime = jacksInverseTime;
-	}
-	public double getJacksOffset() {
-		return jacksOffset;
-	}
-	public void setJacksOffset(double jacksOffset) {
-		this.jacksOffset = jacksOffset;
-	}
-	public double getMurizaraInverseTime() {
-		return murizaraInverseTime;
-	}
-	public void setMurizaraInverseTime(double murizaraInverseTime) {
-		this.murizaraInverseTime = murizaraInverseTime;
-	}
-	public double getMurizaraOffset() {
-		return murizaraOffset;
-	}
-	public void setMurizaraOffset(double murizaraOffset) {
-		this.murizaraOffset = murizaraOffset;
-	}
-	public double getCSInverseTime() {
-		return csInverseTime;
-	}
-	public void setCSInverseTime(double csInverseTime) {
-		this.csInverseTime = csInverseTime;
-	}
-	public double getCSOffset() {
-		return csOffset;
-	}
-	public void setCSOffset(double csOffset) {
-		this.csOffset = csOffset;
-	}
-	public int getScratchReallocationThreshold() {
-		return scratchReallocationThreshold;
-	}
-	public void setScratchReallocationThreshold(int scratchReallocationThreshold) {
-		this.scratchReallocationThreshold = scratchReallocationThreshold;
-	}
-	public int getAvoidLNFactor() {
-		return avoidLNFactor;
-	}
-	public void setAvoidLNFactor(int avoidLNFactor) {
-		this.avoidLNFactor = avoidLNFactor;
-	}
 
 	public void validate() {
 		if(skin == null) {
@@ -983,18 +910,6 @@ public final class PlayerConfig {
 
 		// --Stream
 		maxRequestCount = MathUtils.clamp(maxRequestCount, 0, 100);
-		
-		// --14izer
-		hranInverseTime = MathUtils.clamp(hranInverseTime, 0.1, 1000.0);
-		hranOffset = MathUtils.clamp(hranOffset, 0.0, 10.0);
-		jacksInverseTime = MathUtils.clamp(jacksInverseTime, 0.1, 1000.0);
-		jacksOffset = MathUtils.clamp(jacksOffset, 0.0, 10.0);
-		murizaraInverseTime = MathUtils.clamp(murizaraInverseTime, 0.1, 1000.0);
-		murizaraOffset = MathUtils.clamp(murizaraOffset, 0.0, 10.0);
-		csInverseTime = MathUtils.clamp(csInverseTime, 0.1, 1000.0);
-		csOffset = MathUtils.clamp(csOffset, 0.0, 10.0);
-		scratchReallocationThreshold = MathUtils.clamp(scratchReallocationThreshold, 0, 7);
-		avoidLNFactor = MathUtils.clamp(avoidLNFactor, 0, 5);
 	}
 
 	public static void init(Config config) throws PlayerConfigException {
