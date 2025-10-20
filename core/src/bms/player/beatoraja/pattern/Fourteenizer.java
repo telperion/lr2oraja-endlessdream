@@ -454,7 +454,7 @@ public class Fourteenizer {
         }
 
         public void log() {
-            Logger.getGlobal().info("Allocation: " + allocation + ", by note type: " + allocationByNoteType);
+            // Logger.getGlobal().info("Allocation: " + allocation + ", by note type: " + allocationByNoteType);
         }
 
         public void reserve(Region regionTarget, NoteHeld noteHeld) {
@@ -462,7 +462,7 @@ public class Fourteenizer {
             RegionSet regions = allocationByNoteType.getOrDefault(noteType, new RegionSet());
             regions.add(regionTarget);
             allocationByNoteType.put(noteType, regions);
-			Logger.getGlobal().info("Reserve: " + regionTarget + " " + noteHeld + " -> " + regions);
+			// Logger.getGlobal().info("Reserve: " + regionTarget + " " + noteHeld + " -> " + regions);
         }
 
         public void allocate(int laneSource, Region regionTarget, NoteHeld noteHeld) {
@@ -471,7 +471,7 @@ public class Fourteenizer {
             RegionSet regions = allocationByNoteType.getOrDefault(noteType, new RegionSet());
             regions.add(regionTarget);
             allocationByNoteType.put(noteType, regions);
-			Logger.getGlobal().info("Allocate: " + laneSource + " " + regionTarget + " " + noteHeld + " -> " + regions);
+			// Logger.getGlobal().info("Allocate: " + laneSource + " " + regionTarget + " " + noteHeld + " -> " + regions);
         }
 
         public Region get(int lane) {
@@ -648,7 +648,7 @@ public class Fourteenizer {
 			for (int i = 0; i < LANES; i++) {
 				if (data[i].head != null) {
 					// Make sure the lane appears as a value in the permuter without assigning it a legal key.
-					Logger.getGlobal().info("Protecting LN: " + i);
+					// Logger.getGlobal().info("Protecting LN: " + i);
 					permuter.put(1000+i, i);
                     allocator.reserve(new Region(i), NoteHeld.LN);
 					removeLane(i);
@@ -668,7 +668,7 @@ public class Fourteenizer {
 				if (notes[i] instanceof LongNote && ((LongNote) notes[i]).isEnd()) {
 					for (int laneHead = 0; laneHead < LANES; laneHead++) {
 						if (data[laneHead].head == ((LongNote) notes[i]).getPair()) {
-							Logger.getGlobal().info("Resolving LN: " + i + " -> " + laneHead);
+							// Logger.getGlobal().info("Resolving LN: " + i + " -> " + laneHead);
 							permuter.put(i, laneHead);
 							strategy.merge(Strategy.CONTINUITY, 1, Integer::sum);
                             allocator.allocate(i, new Region(laneHead), NoteHeld.SN);
@@ -958,9 +958,6 @@ public class Fourteenizer {
 			List<Integer> filteredHistory = new ArrayList<>();
 			for (int i = 0; i < LANES; i++) {
                 Region region = new Region(i);
-                if (region.input != Input.KEY) {
-                    continue;
-                }
 				if (permuter.containsValue(i)) {
 					// Already have a mapping to this lane.
 					continue;
@@ -1002,12 +999,12 @@ public class Fourteenizer {
                 Region region = new Region(i);
 				final double ld = levenshteinDistance(data[i].note, note);
 				final double ran_below = hran.evaluate(data[i].since(time));
-				Logger.getGlobal().info("Levenshtein distance for " + laneSource + " -> " + i + ": " + ld + ", RAN below " + ran_below + " (time = " + data[i].since(time) + ")");
+				// Logger.getGlobal().info("Levenshtein distance for " + laneSource + " -> " + i + ": " + ld + ", RAN below " + ran_below + " (time = " + data[i].since(time) + ")");
 				if (rand.nextDouble() * ld < ran_below) {
 					permuter.put(laneSource, i);
 					removeLane(i);
 					strategy.merge(Strategy.RAN, 1, Integer::sum);
-					Logger.getGlobal().info("Mapped note RAN: " + laneSource + " -> " + i + " from filtered history " + filteredHistory);
+					// Logger.getGlobal().info("Mapped note RAN: " + laneSource + " -> " + i + " from filtered history " + filteredHistory);
 					return true;
 				}
 			}
@@ -1059,7 +1056,7 @@ public class Fourteenizer {
 					permuter.put(laneSource, i);
 					removeLane(i);
 					strategy.merge(Strategy.HRAN, 1, Integer::sum);
-					Logger.getGlobal().info("Mapped note HRAN: " + laneSource + " -> " + i);
+					// Logger.getGlobal().info("Mapped note HRAN: " + laneSource + " -> " + i);
 					return true;
 				}
 			}
@@ -1097,7 +1094,7 @@ public class Fourteenizer {
 				}
                 permuter.put(laneSource, region.scratch());
 				strategy.merge(Strategy.SCRATCH, 1, Integer::sum);
-				Logger.getGlobal().info("Mapped scratch: " + laneSource + " -> " + region.scratch());
+				// Logger.getGlobal().info("Mapped scratch: " + laneSource + " -> " + region.scratch());
 			}
 			return true;
 		}
@@ -1116,6 +1113,14 @@ public class Fourteenizer {
 			}
 
 			Set<Integer> remaining = new HashSet<>();
+			
+			for (int i : hasNote) {
+				if (!mapNoteRAN(tl, i)) {
+					remaining.add(i);
+				}
+			}
+            hasNote = remaining;
+            remaining = new HashSet<>();
 
 			if (!mapScratchToKey) {
 				for (int i : hasNote) {
@@ -1127,13 +1132,6 @@ public class Fourteenizer {
 				remaining = new HashSet<>();
 			}
 			
-			for (int i : hasNote) {
-				if (!mapNoteRAN(tl, i)) {
-					remaining.add(i);
-				}
-			}
-            hasNote = remaining;
-            remaining = new HashSet<>();
 
 			for (int i : hasNote) {
 				if (!mapNoteHRAN(tl, i)) {
@@ -1145,7 +1143,7 @@ public class Fourteenizer {
 		}
 
 		public void performPermutation(TimeLine tl) {
-			Logger.getGlobal().info("Performing permutation: " + permuter);
+			// Logger.getGlobal().info("Performing permutation: " + permuter);
 
 			Note[] notes = new Note[LANES];
 			Note[] hnotes = new Note[LANES];
@@ -1160,7 +1158,7 @@ public class Fourteenizer {
 				int mapped = permuter.getOrDefault(i, i);
 				if (notes[i] != null || hnotes[i] != null) {
 					if (!permuter.containsKey(i)) {
-						Logger.getGlobal().warning("No mapping for note: " + i + " -> " + i);
+						Logger.getGlobal().warning("No mapping for note: " + i + " -> " + i + "on timeline @ " + tl.getTime());
 					}
 					// Logger.getGlobal().info("Setting note: " + i + " -> " + mapped);
 					tl.setNote(mapped, notes[i]);
@@ -1200,7 +1198,7 @@ public class Fourteenizer {
 		}
 
 		public void process(TimeLine tl) {
-			Logger.getGlobal().info("Processing TL: " + tl.getTime());
+			// Logger.getGlobal().info("Processing TL: " + tl.getTime());
 
 			// Prepare state machine for this round of updates.
 			prepareState();
