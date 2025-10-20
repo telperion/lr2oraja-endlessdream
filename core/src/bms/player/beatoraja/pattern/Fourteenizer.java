@@ -159,7 +159,6 @@ public class Fourteenizer {
         public RegionSet fullSides() {
             RegionSet result = new RegionSet(this.stream().map(Region::swapInput).toArray(Region[]::new));
             result.addAll(this);
-            Logger.getGlobal().info("Full sides: " + result);
             return result;
         }
 
@@ -228,6 +227,7 @@ public class Fourteenizer {
 
 	public static class FiveFingerFavorability {
 		public Map<Integer, Double> fff;
+		public Set<Integer> lanesOccupied;
 
 		public final void initialize() {
 			fff.clear();
@@ -259,10 +259,12 @@ public class Fourteenizer {
 			fff.put( 60,   50.0); // 0,0,1,1,1,1,0
 			fff.put( 82,  300.0); // 0,1,0,0,1,0,1
 			fff.put( 37,  300.0); // 1,0,1,0,0,1,0
+			lanesOccupied.clear();
 		}
 
 		public FiveFingerFavorability() {
 			fff = new HashMap<>();
+			lanesOccupied = new HashSet<>();
 			initialize();
 		}
 
@@ -270,11 +272,14 @@ public class Fourteenizer {
 			if (new Region(lane).input != Input.KEY) {
 				return;
 			}
+			if (lanesOccupied.contains(normalize(lane))) {
+				return;
+			}
 
 			// Remove this lane from all keys in the five-finger favorability map.
 			// Any keys reduced to 0 (no lanes) are removed from the map entirely.
-			final int bit = 1 << normalize(lane);
 			Map<Integer, Double> fffAfterRemoval = fff.entrySet().stream().map(entry -> {
+				final int bit = 1 << normalize(lane);
 				int key = entry.getKey();
 				if ((key & bit) == 0) {
 					// If this arrangement doesn't have the lane, we can't use it.
@@ -288,6 +293,7 @@ public class Fourteenizer {
 				return Map.entry(key, entry.getValue());
 			}).filter(entry -> entry != null).collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
 			fff = fffAfterRemoval;
+			lanesOccupied.add(lane);
 		}
 
 		private final boolean hasMatching(int lane) {
@@ -304,8 +310,8 @@ public class Fourteenizer {
 				return;
 			}
 
-			final int bit = 1 << normalize(lane);
 			Map<Integer, Double> fffAfterPDF = fff.entrySet().stream().map(entry -> {
+				final int bit = 1 << normalize(lane);
 				final int key = entry.getKey();
 				if ((key & bit) == 0) {
 					return entry;
@@ -346,7 +352,7 @@ public class Fourteenizer {
 			return result;
 		}
 
-		private final Set<Integer> select(int minCount, java.util.Random rand) {
+		public final Set<Integer> select(int minCount, java.util.Random rand) {
 			// Filter out FFF options without enough lanes.
 			Map<Integer, Double> fffSufficient = fff.entrySet().stream().map(entry -> {
 				int key = entry.getKey();
@@ -427,8 +433,7 @@ public class Fourteenizer {
         }
 
         public void log() {
-            Logger.getGlobal().info("Allocation: " + allocation);
-            Logger.getGlobal().info("AllocationByNoteType: " + allocationByNoteType);
+            Logger.getGlobal().info("Allocation: " + allocation + ", by note type: " + allocationByNoteType);
         }
 
         public void reserve(Region regionTarget, NoteHeld noteHeld) {
@@ -436,6 +441,7 @@ public class Fourteenizer {
             RegionSet regions = allocationByNoteType.getOrDefault(noteType, new RegionSet());
             regions.add(regionTarget);
             allocationByNoteType.put(noteType, regions);
+			Logger.getGlobal().info("Reserve: " + regionTarget + " " + noteHeld + " -> " + regions);
         }
 
         public void allocate(int laneSource, Region regionTarget, NoteHeld noteHeld) {
@@ -444,6 +450,7 @@ public class Fourteenizer {
             RegionSet regions = allocationByNoteType.getOrDefault(noteType, new RegionSet());
             regions.add(regionTarget);
             allocationByNoteType.put(noteType, regions);
+			Logger.getGlobal().info("Allocate: " + laneSource + " " + regionTarget + " " + noteHeld + " -> " + regions);
         }
 
         public Region get(int lane) {
@@ -451,46 +458,41 @@ public class Fourteenizer {
         }
 
         public RegionSet get(Input input, NoteHeld noteHeld) {
-            return allocationByNoteType.getOrDefault(
-                new Pair<>(input, noteHeld),
-                new RegionSet()
-            );
+			RegionSet result = allocationByNoteType.getOrDefault(
+				new Pair<>(input, noteHeld),
+				new RegionSet()
+			);
+			// Logger.getGlobal().info("Get: " + input + " " + noteHeld + " -> " + result);
+            return result;
         }
 
 		public RegionSet available(Input input, NoteHeld noteHeld) {
+			RegionSet available = RegionSet.input(input);
+			// Logger.getGlobal().info("Available: " + input + " " + noteHeld + " -> " + available);
             if (input == Input.TT && noteHeld == NoteHeld.LN) {
                 if (!get(Input.TT, NoteHeld.LN).isEmpty()) {
                     // Don't double up on BSS.
                     return new RegionSet();
                 }
-                RegionSet available = RegionSet.input(input);
                 available.removeAll(get(Input.KEY, NoteHeld.LN).fullSides());
-                return available;
-            }
-
-            if (input == Input.KEY && noteHeld == NoteHeld.LN) {
-                RegionSet available = RegionSet.input(input);
-                available.removeAll(get(Input.TT, NoteHeld.LN).fullSides());
-                available.removeAll(get(Input.TT, NoteHeld.SN).fullSides());
-                return available;
-            }
-
-            if (input == Input.TT && noteHeld == NoteHeld.SN) {
-                RegionSet available = RegionSet.input(input);
-                available.removeAll(get(Input.TT, NoteHeld.LN));
                 available.removeAll(get(Input.KEY, NoteHeld.SN).fullSides());
-                available.removeAll(get(Input.TT, NoteHeld.SN).fullSides());
-                return available;
-            }
-
-            if (input == Input.KEY && noteHeld == NoteHeld.SN) {
-                RegionSet available = RegionSet.input(input);
+			}
+            else if (input == Input.KEY && noteHeld == NoteHeld.LN) {
                 available.removeAll(get(Input.TT, NoteHeld.LN).fullSides());
                 available.removeAll(get(Input.TT, NoteHeld.SN).fullSides());
-                return available;
-            }
+			}
+            else if (input == Input.TT && noteHeld == NoteHeld.SN) {
+                available.removeAll(get(Input.TT, NoteHeld.LN));
+                available.removeAll(get(Input.KEY, NoteHeld.LN).fullSides());
+                available.removeAll(get(Input.KEY, NoteHeld.SN).fullSides());
+			}
+            else if (input == Input.KEY && noteHeld == NoteHeld.SN) {
+                available.removeAll(get(Input.TT, NoteHeld.LN).fullSides());
+                available.removeAll(get(Input.TT, NoteHeld.SN).fullSides());
+			}
 
-            return RegionSet.input(input);
+			// Logger.getGlobal().info("Available after removals: " + input + " " + noteHeld + " -> " + available);
+            return available;
 		}
 
         public int count(Region region) {
@@ -583,8 +585,9 @@ public class Fourteenizer {
 				// Early exit - already receiving a note this update.
 				return 0.0;
 			}
-            if (allocator.get(region.scratch()) != null) {
+            if (allocator.count(new Region(Input.TT, region.side)) > 0) {
                 // Early exit - a scratch note has already been allocated to this side.
+				Logger.getGlobal().info("Early exit - a scratch note has already been allocated to this side: " + region.scratch() + " -> " + allocator.get(region.scratch()));
                 return 0.0;
             }
 			if (!anyHistory()) {
@@ -613,11 +616,12 @@ public class Fourteenizer {
 		private final void removeLane(int lane) {
             Region region = new Region(lane);
 			fff.get(region.side).removeLane(normalize(lane));
+			Logger.getGlobal().info("Removed lane: " + lane + " from " + region.side + " -> " + fff.get(region.side).fff);
 		}
 
 		private final void prepareState() {
-			fff.get(Side.P1).initialize();
-			fff.get(Side.P2).initialize();
+			fff.put(Side.P1, new FiveFingerFavorability());
+			fff.put(Side.P2, new FiveFingerFavorability());
 		}
 
 		public void protectLN() {
@@ -671,7 +675,7 @@ public class Fourteenizer {
 
         private boolean tryAvailableRegions(int laneSource, Input input, NoteHeld noteHeld) {
 			RegionSet availableRegions = allocator.available(input, noteHeld);
-            Logger.getGlobal().info("Available regions for " + laneSource + " " + input + " " + noteHeld + ": " + availableRegions);
+            // Logger.getGlobal().info("Available regions for " + laneSource + " " + input + " " + noteHeld + ": " + availableRegions);
             if (availableRegions.isEmpty()) {
                 throw new IndexOutOfBoundsException("No available regions found for input: " + input + " and noteHeld: " + noteHeld);
             }
@@ -871,14 +875,13 @@ public class Fourteenizer {
                     }
 				}
 			}
-            allocator.log();
 		}
 		
 		private void allocateIncomingNotes(TimeLine tl, boolean mapScratchToKey) {
-			allocateOnlyNoteType(tl, Input.TT, NoteHeld.SN, mapScratchToKey);
 			allocateOnlyNoteType(tl, Input.TT, NoteHeld.LN, mapScratchToKey);
-			allocateOnlyNoteType(tl, Input.KEY, NoteHeld.SN, mapScratchToKey);
 			allocateOnlyNoteType(tl, Input.KEY, NoteHeld.LN, mapScratchToKey);
+			allocateOnlyNoteType(tl, Input.TT, NoteHeld.SN, mapScratchToKey);
+			allocateOnlyNoteType(tl, Input.KEY, NoteHeld.SN, mapScratchToKey);
 		}
 
 		private boolean reallocateScratch() {
@@ -937,6 +940,10 @@ public class Fourteenizer {
                 if (region.input != Input.KEY) {
                     continue;
                 }
+				if (permuter.containsValue(i)) {
+					// Already have a mapping to this lane.
+					continue;
+				}
 				if (data[i].note == null) {
 					// No history for this lane.
 					continue;
@@ -979,7 +986,8 @@ public class Fourteenizer {
 					config.getHranOffset()
 				)) {
 					permuter.put(laneSource, i);
-					fff.get(region.side).removeLane(i);
+					removeLane(i);
+					Logger.getGlobal().info("Mapped note RAN: " + laneSource + " -> " + i + " from filtered history " + filteredHistory);
 					return true;
 				}
 			}
@@ -1015,6 +1023,7 @@ public class Fourteenizer {
 				if (!allocatedRegion.includes(region)) {
 					continue;
 				}
+				Logger.getGlobal().info("Summing PDF for " + region.side + " " + i + " within " + fff.get(region.side).fff + " -> " + fff.get(region.side).sumPDF(normalize(i)));
 				pdf[i] = fff.get(region.side).sumPDF(normalize(i));
 			}
 			Logger.getGlobal().info("PDF: " + Arrays.toString(pdf));
@@ -1028,7 +1037,8 @@ public class Fourteenizer {
 				r -= pdf[i] / sum;
 				if (r <= 0.0) {
 					permuter.put(laneSource, i);
-					fff.get(region.side).removeLane(normalize(i));
+					removeLane(i);
+					Logger.getGlobal().info("Mapped note HRAN: " + laneSource + " -> " + i);
 					return true;
 				}
 			}
@@ -1065,11 +1075,12 @@ public class Fourteenizer {
 					continue;
 				}
                 permuter.put(laneSource, region.scratch());
+				Logger.getGlobal().info("Mapped scratch: " + laneSource + " -> " + region.scratch());
 			}
 			return true;
 		}
 
-		private boolean mapKeys(TimeLine tl) {
+		private boolean mapKeys(TimeLine tl, boolean mapScratchToKey) {
 			// Build a set of lanes with incoming notes.
 			Set<Integer> hasNote = new HashSet<>();
 			for (int i = 0; i < LANES; i++) {
@@ -1083,22 +1094,25 @@ public class Fourteenizer {
 			}
 
 			Set<Integer> remaining = new HashSet<>();
-			for (int i : hasNote) {
-				if (!mapScratch(tl, i)) {
-					remaining.add(i);
-				}
-			}
 
-            hasNote = remaining;
-            remaining = new HashSet<>();
+			if (!mapScratchToKey) {
+				for (int i : hasNote) {
+					if (!mapScratch(tl, i)) {
+						remaining.add(i);
+					}
+				}
+				hasNote = remaining;
+				remaining = new HashSet<>();
+			}
+			
 			for (int i : hasNote) {
 				if (!mapNoteRAN(tl, i)) {
 					remaining.add(i);
 				}
 			}
-
             hasNote = remaining;
             remaining = new HashSet<>();
+
 			for (int i : hasNote) {
 				if (!mapNoteHRAN(tl, i)) {
 					return false;
@@ -1123,7 +1137,10 @@ public class Fourteenizer {
 			for (int i = 0; i < LANES; i++) {
 				int mapped = permuter.getOrDefault(i, i);
 				if (notes[i] != null || hnotes[i] != null) {
-					Logger.getGlobal().info("Setting note: " + i + " -> " + mapped);
+					if (!permuter.containsKey(i)) {
+						Logger.getGlobal().warning("No mapping for note: " + i + " -> " + i);
+					}
+					// Logger.getGlobal().info("Setting note: " + i + " -> " + mapped);
 					tl.setNote(mapped, notes[i]);
 					tl.setHiddenNote(mapped, hnotes[i]);
 					data[mapped].source = i;
@@ -1167,25 +1184,35 @@ public class Fourteenizer {
 			prepareState();
 
 			// Handle active LN.
-            allocator.clear();
-			protectLN();
-			resolveLN(tl);
-			allocateIncomingNotes(tl, false);
-			if (reallocateScratch()) {
-                allocator.clear();
-                protectLN();
-                resolveLN(tl);
-				allocateIncomingNotes(tl, true);
+			boolean mapScratchToKey = true;
+			try {
+				allocator.clear();
+				resolveLN(tl);
+				protectLN();
+				allocateIncomingNotes(tl, false);
+				mapScratchToKey = reallocateScratch();
+			} catch (Exception e) {
+				mapScratchToKey = true;
+			}
+			if (mapScratchToKey) {
+				try {
+					allocator.clear();
+					resolveLN(tl);
+					protectLN();
+					allocateIncomingNotes(tl, true);
+				} catch (Exception e) {
+					Logger.getGlobal().warning("Error allocating notes: " + e.getMessage());
+				}
 			}
 			allocator.log();
 
 			// Apply PDF to the key lanes to set up the five-finger favorability.
 			applyPDF(tl.getTime());
-			Logger.getGlobal().info("PDF: " + fff.get(Side.P1).fff + " " + fff.get(Side.P2).fff);
+			// Logger.getGlobal().info("PDF: " + fff.get(Side.P1).fff + " " + fff.get(Side.P2).fff);
 
 			// Map the keys.
-			mapKeys(tl);
-			Logger.getGlobal().info("Permuter: " + permuter);
+			mapKeys(tl, mapScratchToKey);
+			// Logger.getGlobal().info("Permuter: " + permuter);
 
 			// Actually perform the permutation.
 			performPermutation(tl);
