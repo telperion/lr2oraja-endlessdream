@@ -37,6 +37,7 @@ public class ImGuiRenderer {
     private static ImBoolean SHOW_RANDOM_TRAINER = new ImBoolean(false);
     private static ImBoolean SHOW_FREQ_PLUS = new ImBoolean(false);
     private static ImBoolean SHOW_JUDGE_TRAINER = new ImBoolean(false);
+    private static ImBoolean SHOW_FOURTEENIZER = new ImBoolean(false);
     private static ImBoolean SHOW_SONG_MANAGER = new ImBoolean(false);
     private static ImBoolean SHOW_DOWNLOAD_MENU = new ImBoolean(false);
     private static ImBoolean SHOW_MISC_SETTING = new ImBoolean(false);
@@ -104,6 +105,7 @@ public class ImGuiRenderer {
             ImGui.checkbox("Show Rate Modifier Window", SHOW_FREQ_PLUS);
             ImGui.checkbox("Show Random Trainer Window", SHOW_RANDOM_TRAINER);
             ImGui.checkbox("Show Judge Trainer Window", SHOW_JUDGE_TRAINER);
+            ImGui.checkbox("Show Fourteenizer Window", SHOW_FOURTEENIZER);
             ImGui.checkbox("Show Song Manager Menu", SHOW_SONG_MANAGER);
             ImGui.checkbox("Show Download Tasks Window", SHOW_DOWNLOAD_MENU);
             ImGui.checkbox("Show Misc Setting Menu", SHOW_MISC_SETTING);
@@ -116,6 +118,9 @@ public class ImGuiRenderer {
             }
             if (SHOW_JUDGE_TRAINER.get()) {
                 JudgeTrainerMenu.show(SHOW_JUDGE_TRAINER);
+            }
+            if (SHOW_FOURTEENIZER.get()) {
+                FourteenizerMenu.show(SHOW_FOURTEENIZER);
             }
             if (SHOW_SONG_MANAGER.get()) {
                 SongManagerMenu.show(SHOW_SONG_MANAGER);

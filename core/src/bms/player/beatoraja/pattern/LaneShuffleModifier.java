@@ -247,7 +247,7 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 			if(keys.length == 0) {
 				return;
 			}
-			Fourteenizer.State stateMachine = new Fourteenizer.State(getSeed(), config, model);
+			Fourteenizer.State stateMachine = new Fourteenizer.State(getSeed(), model);
 
 			TimeLine[] timelines = model.getAllTimeLines();
 			for (int index = 0; index < timelines.length; index++) {
@@ -256,6 +256,8 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 					stateMachine.process(tl);
 				}
 			}
+
+			Logger.getGlobal().info("Fourteenizer strategies: " + stateMachine.reportStrategies());
 		}
 	}
 

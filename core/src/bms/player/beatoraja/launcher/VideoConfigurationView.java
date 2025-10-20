@@ -38,27 +38,6 @@ public class VideoConfigurationView implements Initializable {
 
 	@FXML
 	private ComboBox<String> monitor;
-	
-	@FXML
-	private Spinner<Double> hranInverseTime;
-	@FXML
-	private Spinner<Double> hranOffset;
-	@FXML
-	private Spinner<Double> jacksInverseTime;
-	@FXML
-	private Spinner<Double> jacksOffset;
-	@FXML
-	private Spinner<Double> murizaraInverseTime;
-	@FXML
-	private Spinner<Double> murizaraOffset;
-	@FXML
-	private Spinner<Double> csInverseTime;
-	@FXML
-	private Spinner<Double> csOffset;
-	@FXML
-	private Spinner<Integer> scratchReallocationThreshold;
-	@FXML
-	private Spinner<Integer> avoidLNFactor;
 
     @Override
     public void initialize(URL location, ResourceBundle resources) {
@@ -80,16 +59,6 @@ public class VideoConfigurationView implements Initializable {
 
 	public void updatePlayer(PlayerConfig player) {
 		missLayerTime.getValueFactory().setValue(player.getMisslayerDuration());
-		hranInverseTime.getValueFactory().setValue(player.getHranInverseTime());
-		hranOffset.getValueFactory().setValue(player.getHranOffset());
-		jacksInverseTime.getValueFactory().setValue(player.getJacksInverseTime());
-		jacksOffset.getValueFactory().setValue(player.getJacksOffset());
-		murizaraInverseTime.getValueFactory().setValue(player.getMurizaraInverseTime());
-		murizaraOffset.getValueFactory().setValue(player.getMurizaraOffset());
-		csInverseTime.getValueFactory().setValue(player.getCSInverseTime());
-		csOffset.getValueFactory().setValue(player.getCSOffset());
-		scratchReallocationThreshold.getValueFactory().setValue(player.getScratchReallocationThreshold());
-		avoidLNFactor.getValueFactory().setValue(player.getAvoidLNFactor());
 	}
 
 	public void commit(Config config) {
@@ -104,16 +73,6 @@ public class VideoConfigurationView implements Initializable {
 
 	public void commitPlayer(PlayerConfig player) {
 		player.setMisslayerDuration(missLayerTime.getValue());
-		player.setHranInverseTime(hranInverseTime.getValue());
-		player.setHranOffset(hranOffset.getValue());
-		player.setJacksInverseTime(jacksInverseTime.getValue());
-		player.setJacksOffset(jacksOffset.getValue());
-		player.setMurizaraInverseTime(murizaraInverseTime.getValue());
-		player.setMurizaraOffset(murizaraOffset.getValue());
-		player.setCSInverseTime(csInverseTime.getValue());
-		player.setCSOffset(csOffset.getValue());
-		player.setScratchReallocationThreshold(scratchReallocationThreshold.getValue());
-		player.setAvoidLNFactor(avoidLNFactor.getValue());
 	}
 
 	@FXML

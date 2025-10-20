@@ -11,12 +11,41 @@ import org.bytedeco.javacpp.indexer.Index;
 import javafx.util.Pair;
 
 import bms.model.*;
-import bms.player.beatoraja.PlayerConfig;
 
 public class Fourteenizer {
     public static enum Input {BGA, KEY, TT}
 	public static enum NoteHeld {SN, LN}
     public static enum Side {NONE, P1, P2, BOTH}
+	public static enum Strategy {
+		CONTINUITY,		// Maintain continuity of LN
+		SCRATCH,		// TT note mapped to TT lane
+		RAN,			// Random that prefers lane consistency
+		HRAN			// Random that doesn't care about lane consistency
+	}
+
+    public static class Sigmoid {
+        public Double inverseTime;
+        public Double offset;
+
+        public Sigmoid(Double inverseTime, Double offset) {
+            this.inverseTime = inverseTime;
+            this.offset = offset;
+        }
+
+        public double evaluate(double x) {
+            final double decimality = Math.pow(10.0, -offset);
+            final double tightness = Math.log((1.0 - decimality) / decimality) / inverseTime;
+            final double neg = Math.exp(-tightness *  x);
+            final double pos = Math.exp( tightness * (x - inverseTime));
+            return 0.5 * (pos - neg) / (pos + neg) + 0.5;
+        }
+    }
+
+	public static Sigmoid hran = new Sigmoid(1.0, 1.0);
+    public static Sigmoid jacks = new Sigmoid(0.5, 5.0);
+    public static Sigmoid murizara = new Sigmoid(0.5, 5.0);
+	public static Integer scratchReallocationThreshold = 4;
+	public static Integer avoidLNFactor = 1;
 
     public static class Region {
         public final Input input;
@@ -393,14 +422,6 @@ public class Fourteenizer {
 		}
 	}
 	
-    public static final double sigmoid(double x, double inversion_time, double offset_at_zero) {
-        final double decimality = Math.pow(10.0, -offset_at_zero);
-        final double tightness = Math.log((1.0 - decimality) / decimality) / inversion_time;
-        final double neg = Math.exp(-tightness *  x);
-        final double pos = Math.exp( tightness * (x - inversion_time));
-        return 0.5 * (pos - neg) / (pos + neg) + 0.5;
-    }
-
     public static final int levenshteinDistance(String s1, String s2) {
         int[][] dp = new int[s1.length() + 1][s2.length() + 1];
         for (int i = 0; i <= s1.length(); i++) {
@@ -504,12 +525,12 @@ public class Fourteenizer {
 	public static class State {
 		private java.util.Random rand;
 		private BMSModel model;
-		private PlayerConfig config;
 		private static final int LANES = 16;
 		private LaneData[] data;
 		private Map<Side, FiveFingerFavorability> fff;
         private Allocator allocator;
 		private Map<Integer, Integer> permuter;
+		private Map<Strategy, Integer> strategy;
 
 		private final double levenshteinDistance(Note n1, Note n2) {
 			if (n1 == null || n2 == null) {
@@ -529,9 +550,8 @@ public class Fourteenizer {
 		private final double MIN_PDF = 1e-24;
 
 		
-		public State(long seed, PlayerConfig config, BMSModel model) {
+		public State(long seed, BMSModel model) {
 			this.rand = new java.util.Random(seed);
-			this.config = config;
 			this.model = model;
 			this.data = new LaneData[LANES];
 			for (int i = 0; i < LANES; i++) {
@@ -542,6 +562,15 @@ public class Fourteenizer {
 			this.fff.put(Side.P2, new FiveFingerFavorability());
             this.allocator = new Allocator();
 			this.permuter = new HashMap<>();
+			this.strategy = new HashMap<>();
+		}
+
+		public int count(Strategy strategy) {
+			return this.strategy.getOrDefault(strategy, 0);
+		}
+
+		public String reportStrategies() {
+			return strategy.toString();
 		}
 
 		private boolean anyHistory() {
@@ -568,11 +597,7 @@ public class Fourteenizer {
 			}
 			// Calculate the time since the last note in the same lane,
 			// and use that to calculate the sigmoid influence on the PDF.
-			return sigmoid(
-				data[lane].since(time),
-				config.getJacksInverseTime(),
-				config.getJacksOffset()
-			);
+			return jacks.evaluate(data[lane].since(time));
 		}
 
 		private double pdfMurizara(int lane, long time) {
@@ -587,8 +612,7 @@ public class Fourteenizer {
 			}
             if (allocator.count(new Region(Input.TT, region.side)) > 0) {
                 // Early exit - a scratch note has already been allocated to this side.
-				Logger.getGlobal().info("Early exit - a scratch note has already been allocated to this side: " + region.scratch() + " -> " + allocator.get(region.scratch()));
-                return 0.0;
+				return 0.0;
             }
 			if (!anyHistory()) {
 				// Early exit - no note history to influence positioning yet.
@@ -596,11 +620,7 @@ public class Fourteenizer {
 			}
 			// Calculate the time since the last note in the scratch lane on the same side,
 			// and use that to calculate the sigmoid influence on the PDF.
-			return sigmoid(
-				data[region.scratch()].since(time),
-				config.getMurizaraInverseTime(),
-				config.getMurizaraOffset()
-			);
+			return murizara.evaluate(data[region.scratch()].since(time));
 		}
 
 		private final void applyPDF(long time) {
@@ -616,7 +636,7 @@ public class Fourteenizer {
 		private final void removeLane(int lane) {
             Region region = new Region(lane);
 			fff.get(region.side).removeLane(normalize(lane));
-			Logger.getGlobal().info("Removed lane: " + lane + " from " + region.side + " -> " + fff.get(region.side).fff);
+			// Logger.getGlobal().info("Removed lane: " + lane + " from " + region.side + " -> " + fff.get(region.side).fff);
 		}
 
 		private final void prepareState() {
@@ -650,6 +670,7 @@ public class Fourteenizer {
 						if (data[laneHead].head == ((LongNote) notes[i]).getPair()) {
 							Logger.getGlobal().info("Resolving LN: " + i + " -> " + laneHead);
 							permuter.put(i, laneHead);
+							strategy.merge(Strategy.CONTINUITY, 1, Integer::sum);
                             allocator.allocate(i, new Region(laneHead), NoteHeld.SN);
 							removeLane(laneHead);
 							break;
@@ -809,8 +830,8 @@ public class Fourteenizer {
 				), Integer::sum);
 			}
 			if (avoidLNs.get(Side.P1) + avoidLNs.get(Side.P2) > 0) {
-				boolean testP1 = rand.nextDouble() < Math.exp(-avoidLNs.get(Side.P1)*config.getAvoidLNFactor());
-				boolean testP2 = rand.nextDouble() < Math.exp(-avoidLNs.get(Side.P2)*config.getAvoidLNFactor());
+				boolean testP1 = rand.nextDouble() < Math.exp(-avoidLNs.get(Side.P1)*avoidLNFactor);
+				boolean testP2 = rand.nextDouble() < Math.exp(-avoidLNs.get(Side.P2)*avoidLNFactor);
 				if (!testP1 && testP2) {
 					allocator.allocate(laneSource, new Region(Input.KEY, Side.P2), NoteHeld.SN);
 					return true;
@@ -890,19 +911,19 @@ public class Fourteenizer {
             int countBOTH = allocator.count(new Region(Input.KEY, Side.BOTH));
             int fffP1 = fff.get(Side.P1).maxLaneCount();
             int fffP2 = fff.get(Side.P2).maxLaneCount();
-            if (countP1 > config.getScratchReallocationThreshold()) {
+            if (countP1 > scratchReallocationThreshold) {
                 return true;
             }
             if (countP1 > fffP1) {
                 return true;
             }
-            if (countP2 > config.getScratchReallocationThreshold()) {
+            if (countP2 > scratchReallocationThreshold) {
                 return true;
             }
             if (countP2 > fffP2) {
                 return true;
             }   
-            if (countP1 + countP2 + countBOTH > 2 * config.getScratchReallocationThreshold()) {
+            if (countP1 + countP2 + countBOTH > 2 * scratchReallocationThreshold) {
                 return true;
             }
             if (countP1 + countP2 + countBOTH > fffP1 + fffP2) {
@@ -964,10 +985,10 @@ public class Fourteenizer {
 					// No matching five-finger favorability combo.
 					continue;
 				}
-				// if (lane != data[i].source) {
-				// 	// Source lane doesn't match.
-				// 	continue;
-				// }
+				if (laneSource != data[i].source) {
+					// Source lane doesn't match.
+					continue;
+				}
 				// Passes all filters.
 				filteredHistory.add(i);
 			}
@@ -980,13 +1001,12 @@ public class Fourteenizer {
 			for (int i : filteredHistory) {
                 Region region = new Region(i);
 				final double ld = levenshteinDistance(data[i].note, note);
-				if (rand.nextDouble() * (1.0 - ld) < sigmoid(
-					data[i].since(time),
-					config.getHranInverseTime(),
-					config.getHranOffset()
-				)) {
+				final double ran_below = hran.evaluate(data[i].since(time));
+				Logger.getGlobal().info("Levenshtein distance for " + laneSource + " -> " + i + ": " + ld + ", RAN below " + ran_below + " (time = " + data[i].since(time) + ")");
+				if (rand.nextDouble() * ld < ran_below) {
 					permuter.put(laneSource, i);
 					removeLane(i);
+					strategy.merge(Strategy.RAN, 1, Integer::sum);
 					Logger.getGlobal().info("Mapped note RAN: " + laneSource + " -> " + i + " from filtered history " + filteredHistory);
 					return true;
 				}
@@ -1023,10 +1043,10 @@ public class Fourteenizer {
 				if (!allocatedRegion.includes(region)) {
 					continue;
 				}
-				Logger.getGlobal().info("Summing PDF for " + region.side + " " + i + " within " + fff.get(region.side).fff + " -> " + fff.get(region.side).sumPDF(normalize(i)));
+				// Logger.getGlobal().info("Summing PDF for " + region.side + " " + i + " within " + fff.get(region.side).fff + " -> " + fff.get(region.side).sumPDF(normalize(i)));
 				pdf[i] = fff.get(region.side).sumPDF(normalize(i));
 			}
-			Logger.getGlobal().info("PDF: " + Arrays.toString(pdf));
+			// Logger.getGlobal().info("PDF: " + Arrays.toString(pdf));
 			double sum = Arrays.stream(pdf).sum();
 			if (sum <= 0.0) {
 				return false;
@@ -1038,6 +1058,7 @@ public class Fourteenizer {
 				if (r <= 0.0) {
 					permuter.put(laneSource, i);
 					removeLane(i);
+					strategy.merge(Strategy.HRAN, 1, Integer::sum);
 					Logger.getGlobal().info("Mapped note HRAN: " + laneSource + " -> " + i);
 					return true;
 				}
@@ -1075,6 +1096,7 @@ public class Fourteenizer {
 					continue;
 				}
                 permuter.put(laneSource, region.scratch());
+				strategy.merge(Strategy.SCRATCH, 1, Integer::sum);
 				Logger.getGlobal().info("Mapped scratch: " + laneSource + " -> " + region.scratch());
 			}
 			return true;
