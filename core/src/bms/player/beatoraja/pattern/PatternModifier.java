@@ -115,9 +115,10 @@ public abstract class PatternModifier {
 			case CROSS -> new LaneCrossShuffleModifier(player, false);
 			case RANDOM_PLAYABLE -> new LanePlayableRandomShuffleModifier(player, false);
 
-			case FOURTEENIZER_A -> new PlayerFourteenizer(config);
-			case FOURTEENIZER_B -> new PlayerFourteenizer(config);
-			case FOURTEENIZER_C -> new PlayerFourteenizer(config);
+			case FLIP -> new PlayerFlipModifier();
+			// TODO BATTLEはModeModifierの方がいいかも
+			case BATTLE -> new PlayerBattleModifier();
+			case FOURTEENIZER -> new PlayerFourteenizer();
 
 			default -> switch (chartOprion.unit) {
 				case NOTE -> new NoteShuffleModifier(chartOprion, player, mode, config);
