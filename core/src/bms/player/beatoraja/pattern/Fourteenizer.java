@@ -50,6 +50,7 @@ public class Fourteenizer {
     public static Sigmoid murizara = new Sigmoid(0.5, 5.0);
 	public static Integer scratchReallocationThreshold = 4;
 	public static Integer avoidLNFactor = 1;
+	public static Boolean avoid56 = true;
 
     public static class Region {
         public final Input input;
@@ -292,7 +293,15 @@ public class Fourteenizer {
 			fff.put( 60,   50.0); // 0,0,1,1,1,1,0
 			fff.put( 82,  300.0); // 0,1,0,0,1,0,1
 			fff.put( 37,  300.0); // 1,0,1,0,0,1,0
+			if (avoid56) {
+				// Remove combos with lanes "5 and 6" (1 and 2 in beatoraja numbering).
+				fff = fff.entrySet().stream().filter(entry -> 
+					(entry.getKey() & 6) != 6
+				).collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+			}
+
 			lanesOccupied.clear();
+
 		}
 
 		public FiveFingerFavorability() {

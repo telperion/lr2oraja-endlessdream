@@ -32,7 +32,7 @@ public class FourteenizerMenu {
     private static Sigmoid murizara = new Sigmoid(Fourteenizer.murizara.inverseTime, Fourteenizer.murizara.offset);
     private static ImInt scratchReallocationThreshold = new ImInt(Fourteenizer.scratchReallocationThreshold);
     private static ImInt avoidLNFactor = new ImInt(Fourteenizer.avoidLNFactor);
-
+    private static ImBoolean avoid56 = new ImBoolean(Fourteenizer.avoid56);
 
     public static void show(ImBoolean showFourteenizer) {
         float relativeX = windowWidth * 0.455f;
@@ -98,6 +98,15 @@ public class FourteenizerMenu {
                 if (ImGui.dragScalar("##avoidLNFactor", ImGuiDataType.S32, avoidLNFactor, 1, 1, 5, "%d")) {
                     Fourteenizer.avoidLNFactor = avoidLNFactor.get();
                 }
+
+                ImGui.tableNextRow();
+                ImGui.tableSetColumnIndex(0);
+                ImGui.text("Avoid 56");
+                ImGui.tableSetColumnIndex(2);
+                if (ImGui.checkbox("##avoid56", avoid56)) {
+                    Fourteenizer.avoid56 = avoid56.get();
+                }
+
                 ImGui.endTable();
             }
             ImGui.end();

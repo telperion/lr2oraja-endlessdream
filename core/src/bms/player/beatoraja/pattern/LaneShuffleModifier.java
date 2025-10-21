@@ -224,12 +224,9 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 	}
 
 	public static class PlayerFourteenizer extends LaneShuffleModifier {
-		private PlayerConfig config;
-		
-		public PlayerFourteenizer(PlayerConfig config) {
+		public PlayerFourteenizer() {
 			super(0, true, false);
 			setAssistLevel(AssistLevel.ASSIST);
-			this.config = config;
 		}
 
 		protected int[] makeRandom(int[] keys, BMSModel model) {
