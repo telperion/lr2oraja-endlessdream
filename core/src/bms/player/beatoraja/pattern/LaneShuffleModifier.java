@@ -242,6 +242,15 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 				return;
 			}
 
+			Logger.getGlobal().info(
+				"Fourteenizer parameters: " +
+				"H-ness of Random: " + Fourteenizer.hran.toString() +
+				", Jack Protection: " + Fourteenizer.jacks.toString() +
+				", Murizara Protection: " + Fourteenizer.murizara.toString() +
+				", Scratch Reallocation Threshold: " + Fourteenizer.scratchReallocationThreshold.toString() +
+				", Avoid LN Factor: " + Fourteenizer.avoidLNFactor.toString()
+			);
+
 			Mode mode = model.getMode();
 			final int[] keys = getKeys(mode, player, isScratchLaneModify);
 			if(keys.length == 0) {

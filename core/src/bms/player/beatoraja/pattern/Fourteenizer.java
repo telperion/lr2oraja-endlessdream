@@ -39,6 +39,10 @@ public class Fourteenizer {
             final double pos = Math.exp( tightness * (x - inverseTime));
             return 0.5 * (pos - neg) / (pos + neg) + 0.5;
         }
+
+		public String toString() {
+			return "Sigmoid(inverseTime=" + inverseTime + ", offset=" + offset + ")";
+		}
     }
 
 	public static Sigmoid hran = new Sigmoid(1.0, 1.0);
@@ -955,19 +959,24 @@ public class Fourteenizer {
 			// - that were mapped without H-RAN
 			// - and whose source lane matches the incoming note's source lane
 			Region allocatedRegion = allocator.get(laneSource);
-			List<Integer> filteredHistory = new ArrayList<>();
+			Set<Integer> filteredHistory = new HashSet<>();
+			double pdf[] = new double[LANES];
+			double cdf = 0.0;
 			for (int i = 0; i < LANES; i++) {
                 Region region = new Region(i);
 				if (permuter.containsValue(i)) {
 					// Already have a mapping to this lane.
+					pdf[i] = 0.0;
 					continue;
 				}
 				if (data[i].note == null) {
 					// No history for this lane.
+					pdf[i] = 0.0;
 					continue;
 				}
 				if (data[i].head != null) {
 					// Active LN, can't place here.
+					pdf[i] = 0.0;
 					continue;
 				}
 				// if (data[i].hran) {
@@ -976,35 +985,51 @@ public class Fourteenizer {
 				// }
 				if (!allocatedRegion.includes(region)) {
 					// Not a selectable region for this note.
-					continue;
-				}
-				if (!fff.get(region.side).hasMatching(i)) {
-					// No matching five-finger favorability combo.
+					pdf[i] = 0.0;
 					continue;
 				}
 				if (laneSource != data[i].source) {
 					// Source lane doesn't match.
+					pdf[i] = 0.0;
 					continue;
 				}
 				// Passes all filters.
+				if (region.input == Input.KEY) {
+					if (fff.get(region.side).hasMatching(i)) {
+						pdf[i] = fff.get(region.side).sumPDF(normalize(i));
+					}
+					else {
+						// No matching five-finger favorability combo.
+						pdf[i] = 0.0;
+						continue;
+					}
+				}
+				else {
+					pdf[i] = 1.0;
+				}
+				cdf += pdf[i];
+				pdf[i] *= (1.0 - hran.evaluate(data[i].since(time)));
+				pdf[i] *= (1.0 - levenshteinDistance(data[i].note, note));
 				filteredHistory.add(i);
 			}
-			Collections.shuffle(filteredHistory, rand);
 			// Run the RAN vs. H-RAN trigger for each note in that filtered history.
 			// If on any note, the trigger doesn't fire:
 			// - use the same mapping as that previous note
 			// - remove that lane from the selectable lanes
 			// - continue to the next incoming note
-			for (int i : filteredHistory) {
-                Region region = new Region(i);
-				final double ld = levenshteinDistance(data[i].note, note);
-				final double ran_below = hran.evaluate(data[i].since(time));
-				// Logger.getGlobal().info("Levenshtein distance for " + laneSource + " -> " + i + ": " + ld + ", RAN below " + ran_below + " (time = " + data[i].since(time) + ")");
-				if (rand.nextDouble() * ld < ran_below) {
+			// Logger.getGlobal().info("PDF: " + Arrays.toString(pdf));
+			if (cdf <= 0.0) {
+				return false;
+			}
+			double r = rand.nextDouble();
+			for (int i = 0; i < LANES; i++) {
+				Region region = new Region(i);
+				r -= pdf[i] / cdf;
+				if (r <= 0.0) {
 					permuter.put(laneSource, i);
 					removeLane(i);
 					strategy.merge(Strategy.RAN, 1, Integer::sum);
-					// Logger.getGlobal().info("Mapped note RAN: " + laneSource + " -> " + i + " from filtered history " + filteredHistory);
+					// Logger.getGlobal().info("Mapped note RAN: " + laneSource + " -> " + i);
 					return true;
 				}
 			}
@@ -1113,6 +1138,19 @@ public class Fourteenizer {
 			}
 
 			Set<Integer> remaining = new HashSet<>();
+			
+			for (int i : hasNote) {
+				// Always map scratch lanes that are going to scratch lanes first.
+				if (mapScratchToKey || new Region(i).input != Input.TT) {
+					remaining.add(i);
+					continue;
+				}
+				if (!mapNoteRAN(tl, i)) {
+					remaining.add(i);
+				}
+			}
+            hasNote = remaining;
+            remaining = new HashSet<>();
 			
 			for (int i : hasNote) {
 				if (!mapNoteRAN(tl, i)) {
