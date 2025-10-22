@@ -33,6 +33,7 @@ public class FourteenizerMenu {
     private static ImInt scratchReallocationThreshold = new ImInt(Fourteenizer.scratchReallocationThreshold);
     private static ImInt avoidLNFactor = new ImInt(Fourteenizer.avoidLNFactor);
     private static ImBoolean avoid56 = new ImBoolean(Fourteenizer.avoid56);
+    private static ImBoolean avoidPills = new ImBoolean(Fourteenizer.avoidPills );
 
     public static void show(ImBoolean showFourteenizer) {
         float relativeX = windowWidth * 0.455f;
@@ -87,7 +88,7 @@ public class FourteenizerMenu {
                 ImGui.tableSetColumnIndex(0);
                 ImGui.text("TT Reallocation");
                 ImGui.tableSetColumnIndex(2);
-                if (ImGui.dragScalar("##scratchReallocationThreshold", ImGuiDataType.S32, scratchReallocationThreshold, 1, 4, 7, "%d")) {
+                if (ImGui.dragScalar("##scratchReallocationThreshold", ImGuiDataType.S32, scratchReallocationThreshold, 1, 3, 7, "%d")) {
                     Fourteenizer.scratchReallocationThreshold = scratchReallocationThreshold.get();
                 }
 
@@ -105,6 +106,14 @@ public class FourteenizerMenu {
                 ImGui.tableSetColumnIndex(2);
                 if (ImGui.checkbox("##avoid56", avoid56)) {
                     Fourteenizer.avoid56 = avoid56.get();
+                }
+
+                ImGui.tableNextRow();
+                ImGui.tableSetColumnIndex(0);
+                ImGui.text("Avoid Pills");
+                ImGui.tableSetColumnIndex(2);
+                if (ImGui.checkbox("##avoidPills", avoidPills)) {
+                    Fourteenizer.avoidPills = avoidPills.get();
                 }
 
                 ImGui.endTable();
