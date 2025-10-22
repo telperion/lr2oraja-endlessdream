@@ -17,6 +17,7 @@ public class Fourteenizer {
 	public static enum NoteHeld {SN, LN}
     public static enum Side {NONE, P1, P2, BOTH}
 	public static enum Strategy {
+		FAILURE,		// Note failed to map
 		CONTINUITY,		// Maintain continuity of LN
 		SCRATCH,		// TT note mapped to TT lane
 		RAN,			// Random that prefers lane consistency
@@ -51,6 +52,7 @@ public class Fourteenizer {
 	public static Integer scratchReallocationThreshold = 4;
 	public static Integer avoidLNFactor = 1;
 	public static Boolean avoid56 = true;
+	public static Boolean avoidPills = true;
 
     public static class Region {
         public final Input input;
@@ -287,17 +289,32 @@ public class Fourteenizer {
 			fff.put( 47,    1.0); // 1,1,1,1,0,1,0
 			fff.put( 31,    5.0); // 1,1,1,1,1,0,0
 			fff.put( 85, 1000.0); // 1,0,1,0,1,0,1
-			fff.put( 27,  700.0); // 1,1,0,1,1,0,0
-			fff.put(108,  700.0); // 0,0,1,1,0,1,1
+			fff.put( 27,  300.0); // 1,1,0,1,1,0,0
+			fff.put(108,  300.0); // 0,0,1,1,0,1,1
 			fff.put(120,   50.0); // 0,0,0,1,1,1,1
 			fff.put( 60,   50.0); // 0,0,1,1,1,1,0
 			fff.put( 82,  300.0); // 0,1,0,0,1,0,1
 			fff.put( 37,  300.0); // 1,0,1,0,0,1,0
+			fff.put( 74,  500.0); // 0,1,0,1,0,0,1
+			fff.put( 41,  500.0); // 1,0,0,1,0,1,0
 			if (avoid56) {
 				// Remove combos with lanes "5 and 6" (1 and 2 in beatoraja numbering).
 				fff = fff.entrySet().stream().filter(entry -> 
 					(entry.getKey() & 6) != 6
 				).collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+			}
+			if (avoidPills) {
+				// Remove combos with adjacent lanes (1-2 2-3 3-4 4-5 5-6 in beatoraja numbering).
+				fff = fff.entrySet().stream().filter(entry -> {
+					int key = entry.getKey();
+					for (int i = 1; i <= 5; i++) {
+						int pill = 3 << i;
+						if ((key & pill) == pill) {
+							return false;
+						}
+					}
+					return true;
+				}).collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
 			}
 
 			lanesOccupied.clear();
@@ -554,8 +571,17 @@ public class Fourteenizer {
 			if (w1 < 0 || w2 < 0) {
 				return 1.0;
 			}
+			if (w1 > model.getWavList().length || w2 > model.getWavList().length) {
+				return 1.0;
+			}
 			String fn1 = model.getWavList()[w1];
 			String fn2 = model.getWavList()[w2];
+			if (fn1 == null || fn2 == null) {
+				return 1.0;
+			}
+			if (fn1.isEmpty() || fn2.isEmpty()) {
+				return 1.0;
+			}
 			return ((double) Fourteenizer.levenshteinDistance(fn1, fn2)) / Math.max(fn1.length(), fn2.length());
 		}
 
@@ -613,7 +639,7 @@ public class Fourteenizer {
 			return jacks.evaluate(data[lane].since(time));
 		}
 
-		private double pdfMurizara(int lane, long time) {
+		private double pdfMurizaraFromPlacingKeyNote(int lane, long time) {
             Region region = new Region(lane);
 			if (region.input != Input.KEY) {
 				// Early exit - non-key lanes have a different calculation for murizara.
@@ -636,13 +662,36 @@ public class Fourteenizer {
 			return murizara.evaluate(data[region.scratch()].since(time));
 		}
 
+		private double pdfMurizaraFromPlacingScratch(int lane, long time) {
+            Region region = new Region(lane);
+			if (region.input != Input.KEY) {
+				// Early exit - key lanes have a different calculation for murizara.
+				return 1.0;
+			}
+			if (permuter.containsValue(region.scratch())) {
+				// Early exit - already receiving a note this update.
+				return 0.0;
+			}
+            if (allocator.count(new Region(Input.KEY, region.side)) > 0) {
+                // Early exit - a key note has already been allocated to this side.
+				return 0.0;
+            }
+			if (!anyHistory()) {
+				// Early exit - no note history to influence positioning yet.
+				return 1.0;
+			}
+			// Calculate the time since the last note in the scratch lane on the same side,
+			// and use that to calculate the sigmoid influence on the PDF.
+			return murizara.evaluate(data[lane].since(time));
+		}
+
 		private final void applyPDF(long time) {
 			for (int i = 0; i < LANES; i++) {
                 Region region = new Region(i);
 				if (region.input != Input.KEY) {
 					continue;
 				}
-				fff.get(region.side).applyPDF(normalize(i), pdfJack(i, time) * pdfMurizara(i, time));
+				fff.get(region.side).applyPDF(normalize(i), pdfJack(i, time) * pdfMurizaraFromPlacingKeyNote(i, time));
 			}
 		}
 
@@ -740,7 +789,7 @@ public class Fourteenizer {
 					continue;
 				}
 				protections.merge(region.side, (
-					(rand.nextDouble() > pdfMurizara(i, time)) ? 1 : 0
+					(rand.nextDouble() > pdfMurizaraFromPlacingScratch(i, time)) ? 1 : 0
 				), Integer::sum);
 			}
 
@@ -776,7 +825,7 @@ public class Fourteenizer {
 				protections.merge(region.side, (
 					(rand.nextDouble() > pdfJack(i, time)) ? 1 : 0
 				) + (
-					(rand.nextDouble() > pdfMurizara(i, time)) ? 1 : 0
+					(rand.nextDouble() > pdfMurizaraFromPlacingKeyNote(i, time)) ? 1 : 0
 				), Integer::sum);
 			}
             // If there is a side with more active LNs, allocate to that side.
@@ -801,11 +850,11 @@ public class Fourteenizer {
 			protections.put(Side.P2, 0);
 			for (int i = 0; i < LANES; i++) {
 				Region region = new Region(i);
-				if (region.input != Input.TT) {
+				if (region.input == Input.TT) {
 					continue;
 				}
 				protections.merge(region.side, (
-					(rand.nextDouble() > pdfMurizara(i, time)) ? 1 : 0
+					(rand.nextDouble() > pdfMurizaraFromPlacingScratch(i, time)) ? 1 : 0
 				), Integer::sum);
 			}
 			// Otherwise, map to the TT lane on the side
@@ -839,7 +888,7 @@ public class Fourteenizer {
 				protections.merge(region.side, (
 					(rand.nextDouble() > pdfJack(i, time)) ? 1 : 0
 				) + (
-					(rand.nextDouble() > pdfMurizara(i, time)) ? 1 : 0
+					(rand.nextDouble() > pdfMurizaraFromPlacingKeyNote(i, time)) ? 1 : 0
 				), Integer::sum);
 			}
 			if (avoidLNs.get(Side.P1) + avoidLNs.get(Side.P2) > 0) {
@@ -1129,8 +1178,9 @@ public class Fourteenizer {
                 permuter.put(laneSource, region.scratch());
 				strategy.merge(Strategy.SCRATCH, 1, Integer::sum);
 				// Logger.getGlobal().info("Mapped scratch: " + laneSource + " -> " + region.scratch());
+				return true;
 			}
-			return true;
+			return false;
 		}
 
 		private boolean mapKeys(TimeLine tl, boolean mapScratchToKey) {
@@ -1147,27 +1197,6 @@ public class Fourteenizer {
 			}
 
 			Set<Integer> remaining = new HashSet<>();
-			
-			for (int i : hasNote) {
-				// Always map scratch lanes that are going to scratch lanes first.
-				if (mapScratchToKey || new Region(i).input != Input.TT) {
-					remaining.add(i);
-					continue;
-				}
-				if (!mapNoteRAN(tl, i)) {
-					remaining.add(i);
-				}
-			}
-            hasNote = remaining;
-            remaining = new HashSet<>();
-			
-			for (int i : hasNote) {
-				if (!mapNoteRAN(tl, i)) {
-					remaining.add(i);
-				}
-			}
-            hasNote = remaining;
-            remaining = new HashSet<>();
 
 			if (!mapScratchToKey) {
 				for (int i : hasNote) {
@@ -1178,6 +1207,14 @@ public class Fourteenizer {
 				hasNote = remaining;
 				remaining = new HashSet<>();
 			}
+			
+			for (int i : hasNote) {
+				if (!mapNoteRAN(tl, i)) {
+					remaining.add(i);
+				}
+			}
+            hasNote = remaining;
+            remaining = new HashSet<>();
 			
 
 			for (int i : hasNote) {
@@ -1201,17 +1238,23 @@ public class Fourteenizer {
 				tl.setHiddenNote(i, null);
 			}
 			
+			RegionSet regions = new RegionSet();
 			for (int i = 0; i < LANES; i++) {
 				int mapped = permuter.getOrDefault(i, i);
 				if (notes[i] != null || hnotes[i] != null) {
 					if (!permuter.containsKey(i)) {
-						Logger.getGlobal().warning("No mapping for note: " + i + " -> " + i + "on timeline @ " + tl.getTime());
+						Logger.getGlobal().warning("No mapping for note: " + i + " -> " + i + " on timeline @ " + tl.getTime());
+						strategy.merge(Strategy.FAILURE, 1, Integer::sum);
 					}
 					// Logger.getGlobal().info("Setting note: " + i + " -> " + mapped);
 					tl.setNote(mapped, notes[i]);
 					tl.setHiddenNote(mapped, hnotes[i]);
 					data[mapped].source = i;
+					regions.add(new Region(mapped));
 				}
+			}
+			if (regions.containsAll(RegionSet.side(Side.P1)) || regions.containsAll(RegionSet.side(Side.P2))) {
+				Logger.getGlobal().warning("Full side allocation: " + permuter);
 			}
 
 			permuter.clear();
