@@ -11,13 +11,17 @@ import org.bytedeco.javacpp.indexer.Index;
 import javafx.util.Pair;
 
 import bms.model.*;
+import elemental2.dom.CSSProperties.MaxHeightUnionType;
 
 public class Fourteenizer {
+	public static final double MAX_EXPONENT = 20.0;
+
     public static enum Input {BGA, KEY, TT}
 	public static enum NoteHeld {SN, LN}
     public static enum Side {NONE, P1, P2, BOTH}
 	public static enum Strategy {
 		FAILURE,		// Note failed to map
+		WORST_CASE,		// Emergency fallback to random open key lane
 		CONTINUITY,		// Maintain continuity of LN
 		SCRATCH,		// TT note mapped to TT lane
 		RAN,			// Random that prefers lane consistency
@@ -34,10 +38,18 @@ public class Fourteenizer {
         }
 
         public double evaluate(double x) {
+			if (x < 0) {
+				return 0.0;
+			}
             final double decimality = Math.pow(10.0, -offset);
             final double tightness = Math.log((1.0 - decimality) / decimality) / inverseTime;
-            final double neg = Math.exp(-tightness *  x);
-            final double pos = Math.exp( tightness * (x - inverseTime));
+			final double negative_exponent = -tightness * x;
+			final double positive_exponent = tightness * (x - inverseTime);
+			if (positive_exponent > MAX_EXPONENT || negative_exponent < -MAX_EXPONENT) {
+				return 1.0;
+			}
+            final double neg = Math.exp(negative_exponent);
+            final double pos = Math.exp(positive_exponent);
             return 0.5 * (pos - neg) / (pos + neg) + 0.5;
         }
 
@@ -46,13 +58,14 @@ public class Fourteenizer {
 		}
     }
 
-	public static Sigmoid hran = new Sigmoid(1.0, 1.0);
+	public static Sigmoid hran = new Sigmoid(1.0, 1.5);
     public static Sigmoid jacks = new Sigmoid(0.5, 5.0);
     public static Sigmoid murizara = new Sigmoid(0.5, 5.0);
-	public static Integer scratchReallocationThreshold = 4;
+	public static Integer scratchReallocationThreshold = 3;
 	public static Integer avoidLNFactor = 1;
 	public static Boolean avoid56 = true;
-	public static Boolean avoidPills = true;
+	public static Boolean avoidPills = false;
+	public static Boolean autoScratch = false;
 
     public static class Region {
         public final Input input;
@@ -267,36 +280,37 @@ public class Fourteenizer {
 
 		public final void initialize() {
 			fff.clear();
-			fff.put(124,    5.0); // 0,0,1,1,1,1,1
-			fff.put(122,    2.0); // 0,1,0,1,1,1,1
-			fff.put(118,    1.0); // 0,1,1,0,1,1,1
-			fff.put(110,    1.0); // 0,1,1,1,0,1,1
-			fff.put( 94,    1.0); // 0,1,1,1,1,0,1
-			fff.put( 62,    1.0); // 0,1,1,1,1,1,0
-			fff.put(121,    2.0); // 1,0,0,1,1,1,1
-			fff.put(117,    5.0); // 1,0,1,0,1,1,1
-			fff.put(109,   10.0); // 1,0,1,1,0,1,1
-			fff.put( 93,   50.0); // 1,0,1,1,1,0,1
-			fff.put( 61,   10.0); // 1,0,1,1,1,1,0
-			fff.put(115,    2.0); // 1,1,0,0,1,1,1
-			fff.put(107, 1000.0); // 1,1,0,1,0,1,1
-			fff.put( 91,   10.0); // 1,1,0,1,1,0,1
-			fff.put( 59,  100.0); // 1,1,0,1,1,1,0
-			fff.put(103,    1.0); // 1,1,1,0,0,1,1
-			fff.put( 87,    1.0); // 1,1,1,0,1,0,1
-			fff.put( 55,    1.0); // 1,1,1,0,1,1,0
-			fff.put( 79,    1.0); // 1,1,1,1,0,0,1
-			fff.put( 47,    1.0); // 1,1,1,1,0,1,0
-			fff.put( 31,    5.0); // 1,1,1,1,1,0,0
-			fff.put( 85, 1000.0); // 1,0,1,0,1,0,1
-			fff.put( 27,  300.0); // 1,1,0,1,1,0,0
-			fff.put(108,  300.0); // 0,0,1,1,0,1,1
-			fff.put(120,   50.0); // 0,0,0,1,1,1,1
-			fff.put( 60,   50.0); // 0,0,1,1,1,1,0
-			fff.put( 82,  300.0); // 0,1,0,0,1,0,1
-			fff.put( 37,  300.0); // 1,0,1,0,0,1,0
-			fff.put( 74,  500.0); // 0,1,0,1,0,0,1
-			fff.put( 41,  500.0); // 1,0,0,1,0,1,0
+			fff.put(127,1e1);
+			fff.put(124,1e3); // 0,0,1,1,1,1,1
+			fff.put(122,1e2); // 0,1,0,1,1,1,1
+			fff.put(118,1e1); // 0,1,1,0,1,1,1
+			fff.put(110,1e1); // 0,1,1,1,0,1,1
+			fff.put( 94,1e1); // 0,1,1,1,1,0,1
+			fff.put( 62,1e1); // 0,1,1,1,1,1,0
+			fff.put(121,1e2); // 1,0,0,1,1,1,1
+			fff.put(117,1e3); // 1,0,1,0,1,1,1
+			fff.put(109,1e4); // 1,0,1,1,0,1,1
+			fff.put( 93,1e5); // 1,0,1,1,1,0,1
+			fff.put( 61,1e4); // 1,0,1,1,1,1,0
+			fff.put(115,1e2); // 1,1,0,0,1,1,1
+			fff.put(107,1e9); // 1,1,0,1,0,1,1
+			fff.put( 91,1e4); // 1,1,0,1,1,0,1
+			fff.put( 59,1e6); // 1,1,0,1,1,1,0
+			fff.put(103,1e1); // 1,1,1,0,0,1,1
+			fff.put( 87,1e1); // 1,1,1,0,1,0,1
+			fff.put( 55,1e1); // 1,1,1,0,1,1,0
+			fff.put( 79,1e1); // 1,1,1,1,0,0,1
+			fff.put( 47,1e1); // 1,1,1,1,0,1,0
+			fff.put( 31,1e3); // 1,1,1,1,1,0,0
+			fff.put( 85,1e9); // 1,0,1,0,1,0,1
+			fff.put( 27,1e8); // 1,1,0,1,1,0,0
+			fff.put(108,1e8); // 0,0,1,1,0,1,1
+			fff.put(120,1e5); // 0,0,0,1,1,1,1
+			fff.put( 60,1e5); // 0,0,1,1,1,1,0
+			fff.put( 82,2e8); // 0,1,0,0,1,0,1
+			fff.put( 37,2e8); // 1,0,1,0,0,1,0
+			fff.put( 74,5e8); // 0,1,0,1,0,0,1
+			fff.put( 41,5e8); // 1,0,0,1,0,1,0
 			if (avoid56) {
 				// Remove combos with lanes "5 and 6" (1 and 2 in beatoraja numbering).
 				fff = fff.entrySet().stream().filter(entry -> 
@@ -307,7 +321,7 @@ public class Fourteenizer {
 				// Remove combos with adjacent lanes (1-2 2-3 3-4 4-5 5-6 in beatoraja numbering).
 				fff = fff.entrySet().stream().filter(entry -> {
 					int key = entry.getKey();
-					for (int i = 1; i <= 5; i++) {
+					for (int i = 1; i < 5; i++) {
 						int pill = 3 << i;
 						if ((key & pill) == pill) {
 							return false;
@@ -903,8 +917,8 @@ public class Fourteenizer {
 					return true;
 				}
             }
-            Side side = compare(protections, false);
-            allocator.allocate(laneSource, new Region(Input.KEY, side), NoteHeld.SN);
+            // Side side = compare(protections, false);
+            allocator.allocate(laneSource, new Region(Input.KEY, Side.BOTH), NoteHeld.SN);
             return true;
 		}
 
@@ -967,12 +981,14 @@ public class Fourteenizer {
 			allocateOnlyNoteType(tl, Input.KEY, NoteHeld.SN, mapScratchToKey);
 		}
 
-		private boolean reallocateScratch() {
+		private boolean reallocateScratch(TimeLine tl) {
             int countP1 = allocator.count(new Region(Input.KEY, Side.P1));
             int countP2 = allocator.count(new Region(Input.KEY, Side.P2));
             int countBOTH = allocator.count(new Region(Input.KEY, Side.BOTH));
-            int fffP1 = fff.get(Side.P1).maxLaneCount();
-            int fffP2 = fff.get(Side.P2).maxLaneCount();
+			boolean ignoreP1 = allocator.count(new Region(Input.TT, Side.P1)) > 0;
+			boolean ignoreP2 = allocator.count(new Region(Input.TT, Side.P2)) > 0;
+            int fffP1 = ignoreP1 ? 0 : fff.get(Side.P1).maxLaneCount();
+            int fffP2 = ignoreP2 ? 0 : fff.get(Side.P2).maxLaneCount();
             if (countP1 > scratchReallocationThreshold) {
                 return true;
             }
@@ -990,7 +1006,10 @@ public class Fourteenizer {
             }
             if (countP1 + countP2 + countBOTH > fffP1 + fffP2) {
                 return true;
-            }
+            }			
+			// if (fffP1 == 0 || fffP2 == 0) {
+			// 	Logger.getGlobal().info("Reallocation threshold not met @ " + tl.getTime() + ": P1 " + countP1 + " < " + fffP1 + ", P2" + countP2 + " < " + fffP2 + ", BOTH " + (countP1 + countP2 + countBOTH) + " < " + (fffP1 + fffP2));
+			// }
             return false;
 		}
 
@@ -1112,6 +1131,7 @@ public class Fourteenizer {
 			// five-finger favorability PDF across selectable sides for that note.
 			Region allocatedRegion = allocator.get(laneSource);
 			double pdf[] = new double[LANES];
+			boolean allSkipped = true;
 			for (int i = 0; i < LANES; i++) {
 				Region region = new Region(i);
 				if (region.input != Input.KEY) {
@@ -1125,10 +1145,16 @@ public class Fourteenizer {
 				}
 				// Logger.getGlobal().info("Summing PDF for " + region.side + " " + i + " within " + fff.get(region.side).fff + " -> " + fff.get(region.side).sumPDF(normalize(i)));
 				pdf[i] = fff.get(region.side).sumPDF(normalize(i));
+				allSkipped = false;
+			}
+			if (allSkipped) {
+				Logger.getGlobal().info("All lanes skipped @ " + tl.getTime() + ": " + fff.get(Side.P1).fff + ", " + fff.get(Side.P2).fff);
+				return false;
 			}
 			// Logger.getGlobal().info("PDF: " + Arrays.toString(pdf));
 			double sum = Arrays.stream(pdf).sum();
 			if (sum <= 0.0) {
+				Logger.getGlobal().info("PDF sum is 0.0 @ " + tl.getTime() + ": " + Arrays.toString(pdf));
 				return false;
 			}
 			double r = rand.nextDouble();
@@ -1183,6 +1209,29 @@ public class Fourteenizer {
 			return false;
 		}
 
+		private boolean mapWorstCase(TimeLine tl, int laneSource) {
+			List<Integer> worstCase = new ArrayList<>();
+			for (int i = 0; i < LANES; i++) {
+				Region region = new Region(i);
+				if (region.input != Input.KEY) {
+					continue;
+				}
+				if (permuter.containsValue(i)) {
+					continue;
+				}
+				worstCase.add(i);
+			}
+			if (worstCase.isEmpty()) {
+				return false;
+			}
+			int laneTarget = worstCase.get(rand.nextInt(worstCase.size()));
+			permuter.put(laneSource, laneTarget);
+			removeLane(laneTarget);
+			strategy.merge(Strategy.WORST_CASE, 1, Integer::sum);
+			Logger.getGlobal().info("Worst case mapping at random: " + laneSource + " among " + worstCase + " -> " + laneTarget);
+			return true;
+		}
+
 		private boolean mapKeys(TimeLine tl, boolean mapScratchToKey) {
 			// Build a set of lanes with incoming notes.
 			Set<Integer> hasNote = new HashSet<>();
@@ -1219,6 +1268,15 @@ public class Fourteenizer {
 
 			for (int i : hasNote) {
 				if (!mapNoteHRAN(tl, i)) {
+					remaining.add(i);
+				}
+			}
+            hasNote = remaining;
+            remaining = new HashSet<>();
+
+			for (int i : hasNote) {
+				if (!mapWorstCase(tl, i)) {
+					// Nothing could be done for this note :(
 					return false;
 				}
 			}
@@ -1254,7 +1312,7 @@ public class Fourteenizer {
 				}
 			}
 			if (regions.containsAll(RegionSet.side(Side.P1)) || regions.containsAll(RegionSet.side(Side.P2))) {
-				Logger.getGlobal().warning("Full side allocation: " + permuter);
+				Logger.getGlobal().warning("Full side allocation @ " + tl.getTime() + ": " + permuter);
 			}
 
 			permuter.clear();
@@ -1287,7 +1345,7 @@ public class Fourteenizer {
 			}
 		}
 
-		public void process(TimeLine tl) {
+		public boolean process(TimeLine tl) {
 			// Logger.getGlobal().info("Processing TL: " + tl.getTime());
 
 			// Prepare state machine for this round of updates.
@@ -1300,7 +1358,7 @@ public class Fourteenizer {
 				resolveLN(tl);
 				protectLN();
 				allocateIncomingNotes(tl, false);
-				mapScratchToKey = reallocateScratch();
+				mapScratchToKey = reallocateScratch(tl) || Fourteenizer.autoScratch;
 			} catch (Exception e) {
 				mapScratchToKey = true;
 			}
@@ -1327,6 +1385,8 @@ public class Fourteenizer {
 			// Actually perform the permutation.
 			performPermutation(tl);
 			updateState(tl);
+
+			return mapScratchToKey;
 		}
 	}
 }

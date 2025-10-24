@@ -33,7 +33,8 @@ public class FourteenizerMenu {
     private static ImInt scratchReallocationThreshold = new ImInt(Fourteenizer.scratchReallocationThreshold);
     private static ImInt avoidLNFactor = new ImInt(Fourteenizer.avoidLNFactor);
     private static ImBoolean avoid56 = new ImBoolean(Fourteenizer.avoid56);
-    private static ImBoolean avoidPills = new ImBoolean(Fourteenizer.avoidPills );
+    private static ImBoolean avoidPills = new ImBoolean(Fourteenizer.avoidPills);
+    private static ImBoolean autoScratch = new ImBoolean(Fourteenizer.autoScratch);
 
     public static void show(ImBoolean showFourteenizer) {
         float relativeX = windowWidth * 0.455f;
@@ -42,7 +43,7 @@ public class FourteenizerMenu {
 
 
         if(ImGui.begin("Fourteenizer", showFourteenizer, ImGuiWindowFlags.AlwaysAutoResize)) {
-            if (ImGui.beginTable("FourteenizerTable", 3, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.Resizable)) {
+            if (ImGui.beginTable("FourteenizerSigmoidTable", 3)) {
                 ImGui.tableSetupColumn("Dimension");
                 ImGui.tableSetupColumn("Time to Inverse");
                 ImGui.tableSetupColumn("Offset");
@@ -83,42 +84,59 @@ public class FourteenizerMenu {
                 if (ImGui.dragScalar("##murizaraOffset", ImGuiDataType.Double, murizara.offset, 0.1f, 0.1, 10.0, "%0.1f")) {
                     Fourteenizer.murizara.offset = murizara.offset.get();
                 }
+            }
+            ImGui.endTable();
 
+            if (ImGui.beginTable("FourteenizerSettingsTable", 5)) {
+                ImGui.tableSetupColumn("##A");
+                ImGui.tableSetupColumn("##B");
+                ImGui.tableSetupColumn("##C");
+                ImGui.tableSetupColumn("##D");
+                ImGui.tableSetupColumn("##E");
                 ImGui.tableNextRow();
-                ImGui.tableSetColumnIndex(0);
-                ImGui.text("TT Reallocation");
-                ImGui.tableSetColumnIndex(2);
-                if (ImGui.dragScalar("##scratchReallocationThreshold", ImGuiDataType.S32, scratchReallocationThreshold, 1, 3, 7, "%d")) {
-                    Fourteenizer.scratchReallocationThreshold = scratchReallocationThreshold.get();
-                }
 
-                ImGui.tableNextRow();
                 ImGui.tableSetColumnIndex(0);
-                ImGui.text("Avoid LN Factor");
-                ImGui.tableSetColumnIndex(2);
                 if (ImGui.dragScalar("##avoidLNFactor", ImGuiDataType.S32, avoidLNFactor, 1, 1, 5, "%d")) {
                     Fourteenizer.avoidLNFactor = avoidLNFactor.get();
                 }
+                ImGui.tableSetColumnIndex(1);
+                ImGui.text("Avoid LN Factor");
+
+                ImGui.tableSetColumnIndex(3);
+                if (ImGui.dragScalar("##scratchReallocationThreshold", ImGuiDataType.S32, scratchReallocationThreshold, 1, 2, 7, "%d")) {
+                    Fourteenizer.scratchReallocationThreshold = scratchReallocationThreshold.get();
+                }
+                ImGui.tableSetColumnIndex(4);
+                ImGui.text("TT Reallocation");
 
                 ImGui.tableNextRow();
+
                 ImGui.tableSetColumnIndex(0);
-                ImGui.text("Avoid 56");
-                ImGui.tableSetColumnIndex(2);
                 if (ImGui.checkbox("##avoid56", avoid56)) {
                     Fourteenizer.avoid56 = avoid56.get();
                 }
+                ImGui.tableSetColumnIndex(1);
+                ImGui.text("Avoid 56");
 
+                ImGui.tableSetColumnIndex(3);
+                if (ImGui.checkbox("##autoScratch", autoScratch)) {
+                    Fourteenizer.autoScratch = autoScratch.get();
+                }
+                ImGui.tableSetColumnIndex(4);
+                ImGui.text("Auto Scratch");
+                
                 ImGui.tableNextRow();
+                
                 ImGui.tableSetColumnIndex(0);
-                ImGui.text("Avoid Pills");
-                ImGui.tableSetColumnIndex(2);
                 if (ImGui.checkbox("##avoidPills", avoidPills)) {
                     Fourteenizer.avoidPills = avoidPills.get();
                 }
-
-                ImGui.endTable();
+                ImGui.tableSetColumnIndex(1);
+                ImGui.text("Avoid Pills");
             }
-            ImGui.end();
+            ImGui.endTable();
+
         }
+        ImGui.end();
     }
 }
