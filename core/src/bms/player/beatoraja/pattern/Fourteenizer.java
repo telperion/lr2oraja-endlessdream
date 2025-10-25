@@ -8,6 +8,7 @@ import java.util.stream.Collectors;
 
 import org.bytedeco.javacpp.indexer.Index;
 
+import javafx.animation.Timeline;
 import javafx.util.Pair;
 
 import bms.model.*;
@@ -58,14 +59,15 @@ public class Fourteenizer {
 		}
     }
 
+	public static Boolean enabled = true;
+	public static Boolean autoScratch = false;
+	public static Boolean avoid56 = true;
+	public static Boolean avoidPills = true;
+	public static Integer scratchReallocationThreshold = 3;
+	public static Integer avoidLNFactor = 1;
 	public static Sigmoid hran = new Sigmoid(1.0, 1.5);
     public static Sigmoid jacks = new Sigmoid(0.5, 5.0);
     public static Sigmoid murizara = new Sigmoid(0.5, 5.0);
-	public static Integer scratchReallocationThreshold = 3;
-	public static Integer avoidLNFactor = 1;
-	public static Boolean avoid56 = true;
-	public static Boolean avoidPills = false;
-	public static Boolean autoScratch = false;
 
     public static class Region {
         public final Input input;
@@ -1210,7 +1212,7 @@ public class Fourteenizer {
 		}
 
 		private boolean mapWorstCase(TimeLine tl, int laneSource) {
-			List<Integer> worstCase = new ArrayList<>();
+			Map<Integer, Double> worstCase = new HashMap<>();
 			for (int i = 0; i < LANES; i++) {
 				Region region = new Region(i);
 				if (region.input != Input.KEY) {
@@ -1219,12 +1221,17 @@ public class Fourteenizer {
 				if (permuter.containsValue(i)) {
 					continue;
 				}
-				worstCase.add(i);
+				worstCase.put(i, pdfJack(i, tl.getTime()) * pdfMurizaraFromPlacingKeyNote(i, tl.getTime()));
 			}
 			if (worstCase.isEmpty()) {
 				return false;
 			}
-			int laneTarget = worstCase.get(rand.nextInt(worstCase.size()));
+			Map.Entry<Integer, Double> entry = worstCase.entrySet().stream().max(Map.Entry.comparingByValue()).orElse(null);
+			if (entry == null) {
+				Logger.getGlobal().info("No worst case mapping @ " + tl.getTime() + ": " + worstCase);
+				return false;
+			}
+			int laneTarget = entry.getKey();
 			permuter.put(laneSource, laneTarget);
 			removeLane(laneTarget);
 			strategy.merge(Strategy.WORST_CASE, 1, Integer::sum);
