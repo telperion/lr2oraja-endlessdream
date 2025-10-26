@@ -5,6 +5,7 @@ import bms.player.beatoraja.pattern.Fourteenizer.*;
 
 import java.util.*;
 
+import bms.player.beatoraja.modmenu.ImGuiNotify;
 import bms.player.beatoraja.modmenu.RandomTrainer;
 import bms.player.beatoraja.PlayerConfig;
 
@@ -240,15 +241,6 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 				return;
 			}
 
-			Logger.getGlobal().info(
-				"Fourteenizer parameters: " +
-				"H-ness of Random: " + Fourteenizer.hran.toString() +
-				", Jack Protection: " + Fourteenizer.jacks.toString() +
-				", Murizara Protection: " + Fourteenizer.murizara.toString() +
-				", Scratch Reallocation Threshold: " + Fourteenizer.scratchReallocationThreshold.toString() +
-				", Avoid LN Factor: " + Fourteenizer.avoidLNFactor.toString()
-			);
-
 			Mode mode = model.getMode();
 			final int[] keys = getKeys(mode, player, isScratchLaneModify);
 			if(keys.length == 0) {
@@ -263,8 +255,18 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 					stateMachine.process(tl);
 				}
 			}
-
-			Logger.getGlobal().info("Fourteenizer strategies: " + stateMachine.reportStrategies());
+			ImGuiNotify.info(
+				"Fourteenizer" +
+				"\n\tAuto Scratch: " + Fourteenizer.autoScratch.toString() +
+				"\n\tAvoid 56: " + Fourteenizer.avoid56.toString() +
+				"\n\tAvoid Pills: " + Fourteenizer.avoidPills.toString() +
+				"\n\tScratch Reallocation Threshold: " + Fourteenizer.scratchReallocationThreshold.toString() +
+				"\n\tAvoid LN Factor: " + Fourteenizer.avoidLNFactor.toString() +
+				"\n\tH-ness of Random: " + Fourteenizer.hran.toString() +
+				"\n\tJack Protection: " + Fourteenizer.jacks.toString() +
+				"\n\tMurizara Protection: " + Fourteenizer.murizara.toString() +
+				"\n\nStrategies:\n\t" + stateMachine.reportStrategies()
+			);
 		}
 	}
 

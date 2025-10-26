@@ -30,32 +30,82 @@ public class Fourteenizer {
 	}
 
     public static class Sigmoid {
+		// A sigmoid function that runs from a specified minimum asymptote to
+		// a maximum asymptote of 1. The distance from the minimum asymptote 
+		// at x=0 is the same as the distance from the maximum asymptote at
+		// x=inverseTime, and that distance is given by 10^(-adherence).
+        //
+		//               ^
+		//               |
+		//          1.0 -+------------------------------------------->
+		//               |                            ......---------
+		//               |                   ..---````
+		//               |                .-`
+		// --------------+------ ....-x-`` -------------------------->
+		//               |---````        
+		// minAsymptote -+------------------------------------------->
         public Double inverseTime;
-        public Double offset;
+        public Double adherence;
+		public Double asymptote;
 
-        public Sigmoid(Double inverseTime, Double offset) {
+        public Sigmoid(Double inverseTime, Double adherence, Double asymptote) {
             this.inverseTime = inverseTime;
-            this.offset = offset;
+            this.adherence = adherence;
+            this.asymptote = asymptote;
+        }
+
+        private double calculateExpConstant() {
+            final double decimality = Math.pow(10.0, -adherence);
+            final double asymptoteDiff = (2.0 * decimality) / (1.0 - asymptote) - 1.0;
+            return Math.log((1.0 - asymptoteDiff) / (1.0 + asymptoteDiff)) / inverseTime;
         }
 
         public double evaluate(double x) {
 			if (x < 0) {
 				return 0.0;
 			}
-            final double decimality = Math.pow(10.0, -offset);
-            final double tightness = Math.log((1.0 - decimality) / decimality) / inverseTime;
-			final double negative_exponent = -tightness * x;
-			final double positive_exponent = tightness * (x - inverseTime);
+            final double expConstant = calculateExpConstant();
+			final double negative_exponent = -expConstant * x;
+			final double positive_exponent = expConstant * (x - inverseTime);
 			if (positive_exponent > MAX_EXPONENT || negative_exponent < -MAX_EXPONENT) {
 				return 1.0;
 			}
             final double neg = Math.exp(negative_exponent);
             final double pos = Math.exp(positive_exponent);
-            return 0.5 * (pos - neg) / (pos + neg) + 0.5;
+            return (0.5 - 0.5 * asymptote) * (pos - neg) / (pos + neg) + (0.5 + 0.5 * asymptote);
+        }
+
+        public double evaluateDerivative(double x) {
+            if (x < 0) {
+                return 0.0;
+            }
+            final double expConstant = calculateExpConstant();
+            final double negative_exponent = -expConstant * x;
+			final double positive_exponent = expConstant * (x - inverseTime);
+			if (positive_exponent > MAX_EXPONENT || negative_exponent < -MAX_EXPONENT) {
+				return 0.0;
+			}
+            final double neg = Math.exp(negative_exponent);
+            final double pos = Math.exp(positive_exponent);
+            return expConstant * (0.5 - 0.5 * asymptote) * (4 * neg * pos) / ((pos + neg) * (pos + neg));
+        }
+
+        public double evaluateInverse(double y) {
+            if (y < asymptote || y > 1.0) {
+                return Double.NaN;
+            }
+            final double expConstant = calculateExpConstant();
+            final double lhs = (y - (0.5 + 0.5 * asymptote)) / (0.5 - 0.5 * asymptote);
+            return 0.5 * inverseTime - 0.5 * Math.log((1.0 - lhs) / (1.0 + lhs)) / expConstant;            
         }
 
 		public String toString() {
-			return "Sigmoid(inverseTime=" + inverseTime + ", offset=" + offset + ")";
+			return (
+                "Sigmoid(T=" + String.format("%.1f", inverseTime) +
+                " d=" + String.format("%.1f", adherence) + 
+                " m=" + String.format("%.1f", asymptote) + 
+                "): (" + String.format("%.3f", evaluateInverse(0.0)) + ", 0.0)"
+            );
 		}
     }
 
@@ -65,9 +115,9 @@ public class Fourteenizer {
 	public static Boolean avoidPills = true;
 	public static Integer scratchReallocationThreshold = 3;
 	public static Integer avoidLNFactor = 1;
-	public static Sigmoid hran = new Sigmoid(1.0, 1.5);
-    public static Sigmoid jacks = new Sigmoid(0.5, 5.0);
-    public static Sigmoid murizara = new Sigmoid(0.5, 5.0);
+	public static Sigmoid hran = new Sigmoid(1.0, 1.5, -0.02);
+    public static Sigmoid jacks = new Sigmoid(0.5, 5.0, -0.02);
+    public static Sigmoid murizara = new Sigmoid(0.5, 5.0, -0.02);
 
     public static class Region {
         public final Input input;
@@ -391,8 +441,12 @@ public class Fourteenizer {
 				if ((key & bit) == 0) {
 					return entry;
 				}
-				return Map.entry(key, entry.getValue() * pdf);
-			}).collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+				final double value = entry.getValue() * pdf;
+				if (value <= 0.0) {
+					return null;
+				}
+				return Map.entry(key, value);
+			}).filter(entry -> entry != null).collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
 			fff = fffAfterPDF;
 		}
 
@@ -625,7 +679,10 @@ public class Fourteenizer {
 		}
 
 		public String reportStrategies() {
-			return strategy.toString();
+			return strategy.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+				.map(entry -> entry.getKey().name() + ": " + entry.getValue())
+				.collect(Collectors.joining("\n\t"));
 		}
 
 		private boolean anyHistory() {

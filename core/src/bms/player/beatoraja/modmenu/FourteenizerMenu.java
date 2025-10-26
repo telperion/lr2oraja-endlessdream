@@ -11,19 +11,13 @@ import bms.player.beatoraja.pattern.Fourteenizer;
 public class FourteenizerMenu {
     public static class Sigmoid {
         private ImDouble inverseTime;
-        private ImDouble offset;
+        private ImDouble asymptote;
+        private ImDouble adherence;
 
-        public Sigmoid(double inverseTime, double offset) {
+        public Sigmoid(double inverseTime, double adherence, double asymptote) {
             this.inverseTime = new ImDouble(inverseTime);
-            this.offset = new ImDouble(offset);
-        }
-
-        public double evaluate(double x) {
-            final double decimality = Math.pow(10.0, -offset.get());
-            final double tightness = Math.log((1.0 - decimality) / decimality) / inverseTime.get();
-            final double neg = Math.exp(-tightness *  x);
-            final double pos = Math.exp( tightness * (x - inverseTime.get()));
-            return 0.5 * (pos - neg) / (pos + neg) + 0.5;
+            this.adherence = new ImDouble(adherence);
+            this.asymptote = new ImDouble(asymptote);
         }
     }
 
@@ -33,9 +27,9 @@ public class FourteenizerMenu {
     private static ImBoolean avoidPills = new ImBoolean(Fourteenizer.avoidPills);
     private static ImInt scratchReallocationThreshold = new ImInt(Fourteenizer.scratchReallocationThreshold);
     private static ImInt avoidLNFactor = new ImInt(Fourteenizer.avoidLNFactor);
-    private static Sigmoid hran = new Sigmoid(Fourteenizer.hran.inverseTime, Fourteenizer.hran.offset);
-    private static Sigmoid jacks = new Sigmoid(Fourteenizer.jacks.inverseTime, Fourteenizer.jacks.offset);
-    private static Sigmoid murizara = new Sigmoid(Fourteenizer.murizara.inverseTime, Fourteenizer.murizara.offset);
+    private static Sigmoid hran = new Sigmoid(Fourteenizer.hran.inverseTime, Fourteenizer.hran.adherence, Fourteenizer.hran.asymptote);
+    private static Sigmoid jacks = new Sigmoid(Fourteenizer.jacks.inverseTime, Fourteenizer.jacks.adherence, Fourteenizer.jacks.asymptote);
+    private static Sigmoid murizara = new Sigmoid(Fourteenizer.murizara.inverseTime, Fourteenizer.murizara.adherence, Fourteenizer.murizara.asymptote);
 
     public static void show(ImBoolean showFourteenizer) {
         float relativeX = windowWidth * 0.455f;
@@ -100,10 +94,12 @@ public class FourteenizerMenu {
             }
             ImGui.endTable();
 
-            if (ImGui.beginTable("FourteenizerSigmoidTable", 3)) {
+            if (ImGui.beginTable("FourteenizerSigmoidTable", 5)) {
                 ImGui.tableSetupColumn("Dimension");
-                ImGui.tableSetupColumn("Time to Inverse");
-                ImGui.tableSetupColumn("Offset");
+                ImGui.tableSetupColumn("Spread");
+                ImGui.tableSetupColumn("Adherence");
+                ImGui.tableSetupColumn("Minimum");
+                ImGui.tableSetupColumn("Zero Crossing");
                 ImGui.tableHeadersRow();
 
                 ImGui.tableNextRow();
@@ -114,9 +110,15 @@ public class FourteenizerMenu {
                     Fourteenizer.hran.inverseTime = hran.inverseTime.get();
                 }
                 ImGui.tableSetColumnIndex(2);
-                if (ImGui.dragScalar("##hranOffset", ImGuiDataType.Double, hran.offset, 0.1f, 0.1, 10.0, "%0.1f")) {
-                    Fourteenizer.hran.offset = hran.offset.get();
+                if (ImGui.dragScalar("##hranAdherence", ImGuiDataType.Double, hran.adherence, 0.1f, 0.1, 10.0, "%0.1f")) {
+                    Fourteenizer.hran.adherence = hran.adherence.get();
                 }
+                ImGui.tableSetColumnIndex(3);
+                if (ImGui.dragScalar("##hranAsymptote", ImGuiDataType.Double, hran.asymptote, 0.01f, -1.0, 0.0, "%0.2f")) {
+                    Fourteenizer.hran.asymptote = hran.asymptote.get();
+                }
+                ImGui.tableSetColumnIndex(4);
+                ImGui.text(String.format("%.3f", Fourteenizer.hran.evaluateInverse(0.0)));
 
                 ImGui.tableNextRow();
                 ImGui.tableSetColumnIndex(0);
@@ -126,9 +128,15 @@ public class FourteenizerMenu {
                     Fourteenizer.jacks.inverseTime = jacks.inverseTime.get();
                 }
                 ImGui.tableSetColumnIndex(2);
-                if (ImGui.dragScalar("##jacksOffset", ImGuiDataType.Double, jacks.offset, 0.1f, 0.1, 10.0, "%0.1f")) {
-                    Fourteenizer.jacks.offset = jacks.offset.get();
+                if (ImGui.dragScalar("##jacksAdherence", ImGuiDataType.Double, jacks.adherence, 0.1f, 0.1, 10.0, "%0.1f")) {
+                    Fourteenizer.jacks.adherence = jacks.adherence.get();
                 }
+                ImGui.tableSetColumnIndex(3);
+                if (ImGui.dragScalar("##jacksAsymptote", ImGuiDataType.Double, jacks.asymptote, 0.01f, -1.0, 0.0, "%0.2f")) {
+                    Fourteenizer.jacks.asymptote = jacks.asymptote.get();
+                }
+                ImGui.tableSetColumnIndex(4);
+                ImGui.text(String.format("%.3f", Fourteenizer.jacks.evaluateInverse(0.0)));
 
                 ImGui.tableNextRow();
                 ImGui.tableSetColumnIndex(0);
@@ -138,9 +146,15 @@ public class FourteenizerMenu {
                     Fourteenizer.murizara.inverseTime = murizara.inverseTime.get();
                 }
                 ImGui.tableSetColumnIndex(2);
-                if (ImGui.dragScalar("##murizaraOffset", ImGuiDataType.Double, murizara.offset, 0.1f, 0.1, 10.0, "%0.1f")) {
-                    Fourteenizer.murizara.offset = murizara.offset.get();
+                if (ImGui.dragScalar("##murizaraAdherence", ImGuiDataType.Double, murizara.adherence, 0.1f, 0.1, 10.0, "%0.1f")) {
+                    Fourteenizer.murizara.adherence = murizara.adherence.get();
                 }
+                ImGui.tableSetColumnIndex(3);
+                if (ImGui.dragScalar("##murizaraAsymptote", ImGuiDataType.Double, murizara.asymptote, 0.01f, -1.0, 0.0, "%0.2f")) {
+                    Fourteenizer.murizara.asymptote = murizara.asymptote.get();
+                }
+                ImGui.tableSetColumnIndex(4);
+                ImGui.text(String.format("%.3f", Fourteenizer.murizara.evaluateInverse(0.0)));
             }
             ImGui.endTable();
         }
