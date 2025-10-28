@@ -26,6 +26,7 @@ public class FourteenizerMenu {
     private static ImBoolean avoidPills = new ImBoolean(Fourteenizer.avoidPills);
     private static ImInt scratchReallocationThreshold = new ImInt(Fourteenizer.scratchReallocationThreshold);
     private static ImInt avoidLNFactor = new ImInt(Fourteenizer.avoidLNFactor);
+    private static ImInt zureFactor = new ImInt(Fourteenizer.zureFactor);
     private static Sigmoid hran = new Sigmoid(Fourteenizer.hran.inverseTime, Fourteenizer.hran.adherence, Fourteenizer.hran.asymptote);
     private static Sigmoid jacks = new Sigmoid(Fourteenizer.jacks.inverseTime, Fourteenizer.jacks.adherence, Fourteenizer.jacks.asymptote);
     private static Sigmoid murizara = new Sigmoid(Fourteenizer.murizara.inverseTime, Fourteenizer.murizara.adherence, Fourteenizer.murizara.asymptote);
@@ -87,6 +88,14 @@ public class FourteenizerMenu {
                     Fourteenizer.avoidLNFactor = avoidLNFactor.get();
                 }
                 toolTip("The Fourteenizer algorithm avoids placing short key notes on the same side as a key LN. The higher the Avoid LN factor, the less likely short notes are to combine with LNs.");
+                ImGui.tableNextRow();
+
+                ImGui.tableSetColumnIndex(1);
+                ImGui.setNextItemWidth(ImGui.getTextLineHeight());
+                if (ImGui.dragScalar("Grace Note Factor", ImGuiDataType.S32, zureFactor, 1, 1, 4, "%d")) {
+                    Fourteenizer.zureFactor = zureFactor.get();
+                }
+                toolTip("Higher values weaken the jack and murizara protection on grace notes.");
                 ImGui.tableNextRow();
             }
             ImGui.endTable();
