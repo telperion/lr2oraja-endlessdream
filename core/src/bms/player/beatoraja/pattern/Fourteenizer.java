@@ -15,7 +15,7 @@ import bms.model.*;
 import elemental2.dom.CSSProperties.MaxHeightUnionType;
 
 public class Fourteenizer {
-	public static final String VERSION = "0.1.0";
+	public static final String VERSION = "0.1.1";
 
 	public static final double MAX_EXPONENT = 20.0;
 
@@ -74,7 +74,8 @@ public class Fourteenizer {
 			}
             final double neg = Math.exp(negative_exponent);
             final double pos = Math.exp(positive_exponent);
-            return (0.5 - 0.5 * asymptote) * (pos - neg) / (pos + neg) + (0.5 + 0.5 * asymptote);
+            final double result = (0.5 - 0.5 * asymptote) * (pos - neg) / (pos + neg) + (0.5 + 0.5 * asymptote);
+			return (result < 0.0) ? 0.0 : result;
         }
 
         public double evaluateDerivative(double x) {
@@ -114,9 +115,10 @@ public class Fourteenizer {
 	public static Boolean enabled = true;
 	public static Boolean autoScratch = false;
 	public static Boolean avoid56 = true;
-	public static Boolean avoidPills = true;
+	public static Boolean avoidPills = false;
 	public static Integer scratchReallocationThreshold = 3;
 	public static Integer avoidLNFactor = 1;
+	public static Integer zureFactor = 1;
 	public static Sigmoid hran = new Sigmoid(1.0, 1.5, -0.1);
     public static Sigmoid jacks = new Sigmoid(0.5, 3.0, -0.02);
     public static Sigmoid murizara = new Sigmoid(0.5, 3.0, -0.02);
@@ -766,7 +768,13 @@ public class Fourteenizer {
 				if (region.input != Input.KEY) {
 					continue;
 				}
-				fff.get(region.side).applyPDF(normalize(i), pdfJack(i, time) * pdfMurizaraFromPlacingKeyNote(i, time));
+				final double pdf = pdfJack(i, time) * pdfMurizaraFromPlacingKeyNote(i, time);
+				final double pdfZure = pdfJack(i, time * Fourteenizer.zureFactor) * pdfMurizaraFromPlacingKeyNote(i, time * Fourteenizer.zureFactor);
+				if (pdfZure <= 0.0) {
+					fff.get(region.side).removeLane(normalize(i));
+					continue;
+				}
+				fff.get(region.side).applyPDF(normalize(i), pdf);
 			}
 		}
 
