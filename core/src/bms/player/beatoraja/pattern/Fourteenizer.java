@@ -15,7 +15,7 @@ import bms.model.*;
 import elemental2.dom.CSSProperties.MaxHeightUnionType;
 
 public class Fourteenizer {
-	public static final String VERSION = "0.1.1";
+	public static final String VERSION = "0.2.0";
 
 	public static final double MAX_EXPONENT = 20.0;
 
@@ -119,7 +119,7 @@ public class Fourteenizer {
 	public static Integer scratchReallocationThreshold = 3;
 	public static Integer avoidLNFactor = 1;
 	public static Integer zureFactor = 1;
-	public static Sigmoid hran = new Sigmoid(1.0, 1.5, -0.1);
+	public static Sigmoid hran = new Sigmoid(2.0, 2.0, -0.1);
     public static Sigmoid jacks = new Sigmoid(0.5, 3.0, -0.02);
     public static Sigmoid murizara = new Sigmoid(0.5, 3.0, -0.02);
 
@@ -1134,8 +1134,32 @@ public class Fourteenizer {
 					pdf[i] = 0.0;
 					continue;
 				}
-				if (laneSource != data[i].source) {
-					// Source lane doesn't match.
+
+				// If the absolute lane offset with a previous note is the same
+				// as with the current note, we should consider it a candidate
+				// for RAN-style mapping. e.g.,
+				// if the comparison note in lane 5 was sourced from lane 2
+				// and an incoming note sourced from lane 3 is being tested,
+				// we could preserve original chart structure by placing it
+				// in lane 6 (or lane 4), since the one-lane offset would be
+				// preserved.
+				boolean foundParallelCandidate = false;
+				for (int parallel = 0; parallel < 7; parallel++) {
+					final int testShift = laneSource - parallel;
+					final int testLane = i + testShift;
+					final Region testRegion = new Region(testLane);
+					if (testRegion.input != region.input) {
+						continue;
+					}
+					if (testRegion.side != region.side) {
+						continue;
+					}
+					if (Math.abs(laneSource - data[testLane].source) == Math.abs(testShift)) {
+						foundParallelCandidate = true;
+						break;
+					}
+				}
+				if (!foundParallelCandidate) {
 					pdf[i] = 0.0;
 					continue;
 				}
