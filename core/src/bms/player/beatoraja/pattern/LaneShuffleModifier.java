@@ -245,6 +245,9 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 			if(keys.length == 0) {
 				return;
 			}
+
+			model.setTitle("⑭ " + model.getTitle());
+			model.setSubArtist(model.getSubArtist() + " reobj. Fourteenizer v" + Fourteenizer.VERSION);
 			Fourteenizer.State stateMachine = new Fourteenizer.State(getSeed(), model);
 
 			TimeLine[] timelines = model.getAllTimeLines();
