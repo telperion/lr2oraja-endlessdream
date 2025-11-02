@@ -264,10 +264,13 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 				"\n\tAvoid Pills: " + Fourteenizer.avoidPills.toString() +
 				"\n\tScratch Reallocation Threshold: " + Fourteenizer.scratchReallocationThreshold.toString() +
 				"\n\tAvoid LN Factor: " + Fourteenizer.avoidLNFactor.toString() +
+				"\n\tSymmetry Factor: " + Fourteenizer.symmetryFactor.toString() +
+				"\n\tGrace Note Factor: " + Fourteenizer.zureFactor.toString() +
 				"\n\tH-ness of Random: " + Fourteenizer.hran.toString() +
 				"\n\tJack Protection: " + Fourteenizer.jacks.toString() +
 				"\n\tMurizara Protection: " + Fourteenizer.murizara.toString() +
-				"\n\nStrategies:\n\t" + stateMachine.reportStrategies()
+				"\n\nStrategies:\n\t" + stateMachine.reportStrategies() +
+				"\n\tReallocation Count: " + stateMachine.getReallocationCount().toString()
 			);
 		}
 	}
