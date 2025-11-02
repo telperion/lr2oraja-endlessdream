@@ -15,7 +15,7 @@ import bms.model.*;
 import elemental2.dom.CSSProperties.MaxHeightUnionType;
 
 public class Fourteenizer {
-	public static final String VERSION = "0.2.1";
+	public static final String VERSION = "0.2.91";
 
 	public static final double MAX_EXPONENT = 20.0;
 
@@ -28,6 +28,7 @@ public class Fourteenizer {
 		CONTINUITY,		// Maintain continuity of LN
 		SCRATCH,		// TT note mapped to TT lane
 		RAN,			// Random that prefers lane consistency
+		SYMMETRY,		// Random that prefers parallel or symmetric movement
 		HRAN			// Random that doesn't care about lane consistency
 	}
 
@@ -116,10 +117,11 @@ public class Fourteenizer {
 	public static Boolean autoScratch = false;
 	public static Boolean avoid56 = true;
 	public static Boolean avoidPills = false;
-	public static Integer scratchReallocationThreshold = 3;
+	public static Integer scratchReallocationThreshold = 4;
 	public static Integer avoidLNFactor = 1;
-	public static Integer zureFactor = 1;
-	public static Sigmoid hran = new Sigmoid(2.0, 2.0, -0.1);
+	public static Double symmetryFactor = 0.0;
+	public static Double zureFactor = 0.0;
+	public static Sigmoid hran = new Sigmoid(3.0, 1.5, -0.1);
     public static Sigmoid jacks = new Sigmoid(0.5, 3.0, -0.02);
     public static Sigmoid murizara = new Sigmoid(0.5, 3.0, -0.02);
 
@@ -315,14 +317,21 @@ public class Fourteenizer {
 			this.hran = false;
 		}
 
-		public final double since(long time) {
+		public final double since(long time, boolean fallbackToBeginning) {
 			if (head != null) {
 				return 0.0;
 			}
 			if (note != null) {
 				return (time - note.getTime()) / 1000.0;
 			}
-			return time / 1000.0;
+			if (fallbackToBeginning) {
+				return time / 1000.0;
+			}
+			return Double.POSITIVE_INFINITY;
+		}
+
+		public final double since(long time) {
+			return since(time, true);
 		}
 
 		public final NoteHeld held() {
@@ -346,27 +355,28 @@ public class Fourteenizer {
 			fff.put(121,1e2); // 1,0,0,1,1,1,1
 			fff.put(117,1e3); // 1,0,1,0,1,1,1
 			fff.put(109,1e4); // 1,0,1,1,0,1,1
-			fff.put( 93,1e5); // 1,0,1,1,1,0,1
+			fff.put( 93,2e4); // 1,0,1,1,1,0,1
 			fff.put( 61,1e4); // 1,0,1,1,1,1,0
 			fff.put(115,1e2); // 1,1,0,0,1,1,1
-			fff.put(107,1e9); // 1,1,0,1,0,1,1
+			fff.put(107,1e7); // 1,1,0,1,0,1,1
 			fff.put( 91,1e4); // 1,1,0,1,1,0,1
-			fff.put( 59,1e6); // 1,1,0,1,1,1,0
+			fff.put( 59,2e4); // 1,1,0,1,1,1,0
 			fff.put(103,1e1); // 1,1,1,0,0,1,1
 			fff.put( 87,1e1); // 1,1,1,0,1,0,1
 			fff.put( 55,1e1); // 1,1,1,0,1,1,0
 			fff.put( 79,1e1); // 1,1,1,1,0,0,1
 			fff.put( 47,1e1); // 1,1,1,1,0,1,0
 			fff.put( 31,1e3); // 1,1,1,1,1,0,0
-			fff.put( 85,1e9); // 1,0,1,0,1,0,1
-			fff.put( 27,1e8); // 1,1,0,1,1,0,0
-			fff.put(108,1e8); // 0,0,1,1,0,1,1
+			fff.put( 85,1e7); // 1,0,1,0,1,0,1
+			fff.put( 42,1e7); // 0,1,0,1,0,1,0
+			fff.put( 27,2e5); // 1,1,0,1,1,0,0
+			fff.put(108,2e5); // 0,0,1,1,0,1,1
 			fff.put(120,1e5); // 0,0,0,1,1,1,1
 			fff.put( 60,1e5); // 0,0,1,1,1,1,0
-			fff.put( 82,2e8); // 0,1,0,0,1,0,1
-			fff.put( 37,2e8); // 1,0,1,0,0,1,0
-			fff.put( 74,5e8); // 0,1,0,1,0,0,1
-			fff.put( 41,5e8); // 1,0,0,1,0,1,0
+			fff.put( 82,2e6); // 0,1,0,0,1,0,1
+			fff.put( 37,2e6); // 1,0,1,0,0,1,0
+			fff.put( 74,5e6); // 0,1,0,1,0,0,1
+			fff.put( 41,5e6); // 1,0,0,1,0,1,0
 			if (avoid56) {
 				// Remove combos with lanes "5 and 6" (1 and 2 in beatoraja numbering).
 				fff = fff.entrySet().stream().filter(entry -> 
@@ -631,10 +641,12 @@ public class Fourteenizer {
 		private BMSModel model;
 		private static final int LANES = 16;
 		private LaneData[] data;
+		private Set<Integer> zeroPointLanes;
 		private Map<Side, FiveFingerFavorability> fff;
         private Allocator allocator;
 		private Map<Integer, Integer> permuter;
 		private Map<Strategy, Integer> strategy;
+		private Integer reallocationCount;
 
 		private final double levenshteinDistance(Note n1, Note n2) {
 			if (n1 == null || n2 == null) {
@@ -673,9 +685,11 @@ public class Fourteenizer {
 			this.fff = new HashMap<>();
 			this.fff.put(Side.P1, new FiveFingerFavorability());
 			this.fff.put(Side.P2, new FiveFingerFavorability());
+			this.zeroPointLanes = new HashSet<>();
             this.allocator = new Allocator();
 			this.permuter = new HashMap<>();
 			this.strategy = new HashMap<>();
+			this.reallocationCount = 0;
 		}
 
 		public int count(Strategy strategy) {
@@ -689,6 +703,10 @@ public class Fourteenizer {
 				.collect(Collectors.joining("\n\t"));
 		}
 
+		public Integer getReallocationCount() {
+			return this.reallocationCount;
+		}
+
 		private boolean anyHistory() {
 			for (int i = 0; i < LANES; i++) {
 				if (data[i].note != null) {
@@ -696,6 +714,74 @@ public class Fourteenizer {
 				}
 			}
 			return false;
+		}
+
+		private void cullZeroPointLanes(TimeLine tl) {
+			long time = tl.getTime();
+			for (int i = 0; i < LANES; i++) {
+				Region region = new Region(i);
+				if (region.input == Input.KEY) {
+					if (data[i].since(time, false) < jacks.evaluateInverse(0.0)) {
+						zeroPointLanes.add(i);
+						continue;
+					}
+					if (data[i].since(time, false) < murizara.evaluateInverse(0.0)) {
+						zeroPointLanes.add(region.scratch());
+						continue;
+					}
+					if (data[region.scratch()].since(time, false) < murizara.evaluateInverse(0.0)) {
+						zeroPointLanes.add(i);
+						continue;
+					}
+				}
+			}
+		}
+
+		private boolean mappingNeeded(int laneSource, TimeLine tl) {
+			Note note = tl.getNote(laneSource);
+			if (note == null) {
+				// No notes here. (Don't care about hidden notes.)
+				return false;
+			}
+			if (permuter.containsKey(laneSource)) {
+				// Already have a mapping for this source note.
+				return false;
+			}
+			if (allocator.get(laneSource) == null) {
+				// Don't have an allocation for this source note.
+				return false;
+			}
+			return true;
+		}
+
+		private boolean mappingAvailable(int laneSource, int laneDestination, TimeLine tl) {
+			Region region = new Region(laneDestination);
+			Region allocatedRegion = allocator.get(laneSource);
+			if (zeroPointLanes.contains(laneDestination)) {
+				// Lane culled by zero point protection, can't place here.
+				return false;
+			}
+			if (permuter.containsValue(laneDestination)) {
+				// Already have a mapping to this lane.
+				return false;
+			}
+			// if (data[laneDestination].note == null) {
+			// 	// No history for this lane.
+			// 	return false;
+			// }
+			if (data[laneDestination].head != null) {
+				// Active LN, can't place here.
+				return false;
+			}
+			if (!allocatedRegion.includes(region)) {
+				// Not a selectable region for this note.
+				return false;
+			}
+			if (region.input == Input.KEY && !fff.get(region.side).hasMatching(laneDestination)) {
+				// No matching five-finger favorability combo.
+				return false;
+			}
+			return true;
 		}
 
 		private double pdfJack(int lane, long time) {
@@ -717,6 +803,8 @@ public class Fourteenizer {
 		}
 
 		private double pdfMurizaraFromPlacingKeyNote(int lane, long time) {
+			// Measure the time since the last scratch note on this lane's side,
+			// from the perspective of potentially placing a key note in this lane.
             Region region = new Region(lane);
 			if (region.input != Input.KEY) {
 				// Early exit - non-key lanes have a different calculation for murizara.
@@ -740,6 +828,8 @@ public class Fourteenizer {
 		}
 
 		private double pdfMurizaraFromPlacingScratch(int lane, long time) {
+			// Measure the time since the last key note in this lane, from the
+			// perspective of potentially placing a scratch note on this side.
             Region region = new Region(lane);
 			if (region.input != Input.KEY) {
 				// Early exit - key lanes have a different calculation for murizara.
@@ -768,8 +858,9 @@ public class Fourteenizer {
 				if (region.input != Input.KEY) {
 					continue;
 				}
+				final long zureTime = (long) (time * Math.exp(-Fourteenizer.zureFactor));
 				final double pdf = pdfJack(i, time) * pdfMurizaraFromPlacingKeyNote(i, time);
-				final double pdfZure = pdfJack(i, time * Fourteenizer.zureFactor) * pdfMurizaraFromPlacingKeyNote(i, time * Fourteenizer.zureFactor);
+				final double pdfZure = pdfJack(i, zureTime) * pdfMurizaraFromPlacingKeyNote(i, zureTime);
 				if (pdfZure <= 0.0) {
 					fff.get(region.side).removeLane(normalize(i));
 					continue;
@@ -841,7 +932,12 @@ public class Fourteenizer {
 
         private boolean tryAvailableRegions(int laneSource, Input input, NoteHeld noteHeld) {
 			RegionSet availableRegions = allocator.available(input, noteHeld);
-            // Logger.getGlobal().info("Available regions for " + laneSource + " " + input + " " + noteHeld + ": " + availableRegions);
+			for (int lane : zeroPointLanes) {
+				Region region = new Region(lane);
+				if (region.input == Input.TT) {
+					availableRegions.remove(region);
+				}
+			}
             if (availableRegions.isEmpty()) {
                 throw new IndexOutOfBoundsException("No available regions found for input: " + input + " and noteHeld: " + noteHeld);
             }
@@ -1051,13 +1147,24 @@ public class Fourteenizer {
 		}
 
 		private boolean reallocateScratch(TimeLine tl) {
+			Map<Side, FiveFingerFavorability> fffTest = new HashMap<>();
+			fffTest.put(Side.P1, new FiveFingerFavorability());
+			fffTest.put(Side.P2, new FiveFingerFavorability());
+			for (int lane : zeroPointLanes) {
+				Region region = new Region(lane);
+				if (region.input != Input.KEY) {
+					continue;
+				}
+				fffTest.get(region.side).removeLane(lane);
+			}
+
             int countP1 = allocator.count(new Region(Input.KEY, Side.P1));
             int countP2 = allocator.count(new Region(Input.KEY, Side.P2));
             int countBOTH = allocator.count(new Region(Input.KEY, Side.BOTH));
-			boolean ignoreP1 = allocator.count(new Region(Input.TT, Side.P1)) > 0;
-			boolean ignoreP2 = allocator.count(new Region(Input.TT, Side.P2)) > 0;
-            int fffP1 = ignoreP1 ? 0 : fff.get(Side.P1).maxLaneCount();
-            int fffP2 = ignoreP2 ? 0 : fff.get(Side.P2).maxLaneCount();
+			boolean ignoreP1 = allocator.count(new Region(Input.TT, Side.P1)) > 0 || zeroPointLanes.contains(new Region(Input.TT, Side.P1).scratch());
+			boolean ignoreP2 = allocator.count(new Region(Input.TT, Side.P2)) > 0 || zeroPointLanes.contains(new Region(Input.TT, Side.P2).scratch());
+            int fffP1 = ignoreP1 ? 0 : fffTest.get(Side.P1).maxLaneCount();
+            int fffP2 = ignoreP2 ? 0 : fffTest.get(Side.P2).maxLaneCount();
             if (countP1 > scratchReallocationThreshold) {
                 return true;
             }
@@ -1083,17 +1190,7 @@ public class Fourteenizer {
 		}
 
 		private boolean mapNoteRAN(TimeLine tl, int laneSource) {
-			Note note = tl.getNote(laneSource);
-			if (note == null) {
-				// No notes here. (Don't care about hidden notes.)
-				return false;
-			}
-			if (permuter.containsKey(laneSource)) {
-				// Already have a mapping for this source note.
-				return false;
-			}
-			if (allocator.get(laneSource) == null) {
-				// Don't have an allocation for this source note.
+			if (!mappingNeeded(laneSource, tl)) {
 				return false;
 			}
 
@@ -1109,29 +1206,7 @@ public class Fourteenizer {
 			double pdf[] = new double[LANES];
 			double cdf = 0.0;
 			for (int i = 0; i < LANES; i++) {
-                Region region = new Region(i);
-				if (permuter.containsValue(i)) {
-					// Already have a mapping to this lane.
-					pdf[i] = 0.0;
-					continue;
-				}
-				if (data[i].note == null) {
-					// No history for this lane.
-					pdf[i] = 0.0;
-					continue;
-				}
-				if (data[i].head != null) {
-					// Active LN, can't place here.
-					pdf[i] = 0.0;
-					continue;
-				}
-				// if (data[i].hran) {
-				// 	// Last note was mapped with H-RAN, can't follow with RAN.
-				// 	continue;
-				// }
-				if (!allocatedRegion.includes(region)) {
-					// Not a selectable region for this note.
-					pdf[i] = 0.0;
+				if (!mappingAvailable(laneSource, i, tl)) {
 					continue;
 				}
 
@@ -1143,6 +1218,7 @@ public class Fourteenizer {
 				// we could preserve original chart structure by placing it
 				// in lane 6 (or lane 4), since the one-lane offset would be
 				// preserved.
+                Region region = new Region(i);
 				boolean foundParallelCandidate = false;
 				for (int parallel = 0; parallel < 7; parallel++) {
 					final int testShift = laneSource - parallel;
@@ -1179,7 +1255,7 @@ public class Fourteenizer {
 				}
 				cdf += pdf[i];
 				pdf[i] *= (1.0 - hran.evaluate(data[i].since(time)));
-				pdf[i] *= (1.0 - levenshteinDistance(data[i].note, note));
+				pdf[i] *= (1.0 - levenshteinDistance(data[i].note, tl.getNote(laneSource)));
 				filteredHistory.add(i);
 			}
 			// Run the RAN vs. H-RAN trigger for each note in that filtered history.
@@ -1199,6 +1275,9 @@ public class Fourteenizer {
 					permuter.put(laneSource, i);
 					removeLane(i);
 					strategy.merge(Strategy.RAN, 1, Integer::sum);
+					if (new Region(laneSource).input == Input.TT) {
+						reallocationCount++;
+					}
 					// Logger.getGlobal().info("Mapped note RAN: " + laneSource + " -> " + i);
 					return true;
 				}
@@ -1206,17 +1285,103 @@ public class Fourteenizer {
 			return false;
 		}
 
+		private boolean mapNoteSymmetry(TimeLine tl, int laneSource) {
+			if (!mappingNeeded(laneSource, tl)) {
+				return false;
+			}
+
+			long time = tl.getTime();
+			// Filter the key note history to:
+			// - notes in selectable lanes
+			//   - selectable sides for that note
+			//   - at least one five-finger favorability combo matches on that side
+			// - that were mapped without H-RAN
+			// - and whose source lane matches an occupied lane on the other side
+			Region allocatedRegion = allocator.get(laneSource);
+			Region sourceRegion = new Region(laneSource);
+			Set<Integer> filteredHistory = new HashSet<>();
+			Set<Integer> occupiedLanes = new HashSet<>();
+			for (int i = 0; i < LANES; i++) {
+				if (permuter.containsValue(i)) {
+					occupiedLanes.add(i);
+				}
+			}
+
+			double pdf[] = new double[LANES];
+			double cdf = 0.0;
+			for (int i = 0; i < LANES; i++) {
+				if (!mappingAvailable(laneSource, i, tl)) {
+					continue;
+				}
+
+                Region region = new Region(i);
+				boolean mirrorsExistingNote = false;
+				boolean parallelsExistingNote = false;
+				int normalizedLane = normalize(i);
+				for (int occupiedLane : occupiedLanes) {
+					if (region.side != sourceRegion.side) {
+						int normalizedOccupiedLane = normalize(occupiedLane);
+						if (normalizedLane == normalizedOccupiedLane) {
+							mirrorsExistingNote = true;
+						}
+						if (6 - normalizedLane == normalizedOccupiedLane) {
+							parallelsExistingNote = true;
+						}
+					}
+				}
+				// Let's try just mirroring for now.
+				if (!mirrorsExistingNote) {
+					pdf[i] = 0.0;
+					continue;
+				}
+
+				// Passes all filters.
+				if (region.input == Input.KEY) {
+					if (fff.get(region.side).hasMatching(i)) {
+						pdf[i] = fff.get(region.side).sumPDF(normalize(i));
+					}
+					else {
+						// No matching five-finger favorability combo.
+						pdf[i] = 0.0;
+						continue;
+					}
+				}
+				else {
+					pdf[i] = 1.0;
+				}
+				cdf += pdf[i];
+				pdf[i] *= Math.exp(-symmetryFactor);
+				filteredHistory.add(i);
+			}
+			// Run the symmetry trigger for each note in that filtered history.
+			// If on any note, the trigger doesn't fire:
+			// - use the same mapping as that previous note
+			// - remove that lane from the selectable lanes
+			// - continue to the next incoming note
+			// Logger.getGlobal().info("PDF: " + Arrays.toString(pdf));
+			if (cdf <= 0.0) {
+				return false;
+			}
+			double r = rand.nextDouble();
+			for (int i = 0; i < LANES; i++) {
+				Region region = new Region(i);
+				r -= pdf[i] / cdf;
+				if (r <= 0.0) {
+					permuter.put(laneSource, i);
+					removeLane(i);
+					strategy.merge(Strategy.SYMMETRY, 1, Integer::sum);
+					if (new Region(laneSource).input == Input.TT) {
+						reallocationCount++;
+					}
+					// Logger.getGlobal().info("Mapped note SYMMETRY: " + laneSource + " -> " + i);
+					return true;
+				}
+			}
+			return false;
+		}
+
 		private boolean mapNoteHRAN(TimeLine tl, int laneSource) {
-			if (tl.getNote(laneSource) == null && tl.getHiddenNote(laneSource) == null) {
-				// No notes here.
-				return false;
-			}
-			if (permuter.containsKey(laneSource)) {
-				// Already have a mapping for this source note.
-				return false;
-			}
-			if (allocator.get(laneSource) == null) {
-				// Don't have an allocation for this source note.
+			if (!mappingNeeded(laneSource, tl)) {
 				return false;
 			}
 
@@ -1226,16 +1391,11 @@ public class Fourteenizer {
 			double pdf[] = new double[LANES];
 			boolean allSkipped = true;
 			for (int i = 0; i < LANES; i++) {
+				if (!mappingAvailable(laneSource, i, tl)) {
+					continue;
+				}
+
 				Region region = new Region(i);
-				if (region.input != Input.KEY) {
-					continue;
-				}
-				if (permuter.containsValue(i)) {
-					continue;
-				}
-				if (!allocatedRegion.includes(region)) {
-					continue;
-				}
 				// Logger.getGlobal().info("Summing PDF for " + region.side + " " + i + " within " + fff.get(region.side).fff + " -> " + fff.get(region.side).sumPDF(normalize(i)));
 				pdf[i] = fff.get(region.side).sumPDF(normalize(i));
 				allSkipped = false;
@@ -1258,6 +1418,9 @@ public class Fourteenizer {
 					permuter.put(laneSource, i);
 					removeLane(i);
 					strategy.merge(Strategy.HRAN, 1, Integer::sum);
+					if (new Region(laneSource).input == Input.TT) {
+						reallocationCount++;
+					}
 					// Logger.getGlobal().info("Mapped note HRAN: " + laneSource + " -> " + i);
 					return true;
 				}
@@ -1270,18 +1433,10 @@ public class Fourteenizer {
                 // Only scratch lanes can map to other scratch lanes.
                 return false;
             }
-			if (tl.getNote(laneSource) == null && tl.getHiddenNote(laneSource) == null) {
-				// No notes here.
+			if (!mappingNeeded(laneSource, tl)) {
 				return false;
 			}
-			if (permuter.containsKey(laneSource)) {
-				// Already have a mapping for this source note.
-				return false;
-			}
-			if (allocator.get(laneSource) == null) {
-				// Don't have an allocation for this source note.
-				return false;
-			}
+			
 			Region allocatedRegion = allocator.get(laneSource);
 			for (int i = 0; i < LANES; i++) {
 				Region region = new Region(i);
@@ -1357,6 +1512,15 @@ public class Fourteenizer {
 			
 			for (int i : hasNote) {
 				if (!mapNoteRAN(tl, i)) {
+					remaining.add(i);
+				}
+			}
+            hasNote = remaining;
+            remaining = new HashSet<>();
+			
+
+			for (int i : hasNote) {
+				if (!mapNoteSymmetry(tl, i)) {
 					remaining.add(i);
 				}
 			}
@@ -1448,6 +1612,8 @@ public class Fourteenizer {
 
 			// Prepare state machine for this round of updates.
 			prepareState();
+			zeroPointLanes.clear();
+			cullZeroPointLanes(tl);
 
 			// Handle active LN.
 			boolean mapScratchToKey = true;

@@ -26,7 +26,8 @@ public class FourteenizerMenu {
     private static ImBoolean avoidPills = new ImBoolean(Fourteenizer.avoidPills);
     private static ImInt scratchReallocationThreshold = new ImInt(Fourteenizer.scratchReallocationThreshold);
     private static ImInt avoidLNFactor = new ImInt(Fourteenizer.avoidLNFactor);
-    private static ImInt zureFactor = new ImInt(Fourteenizer.zureFactor);
+    private static ImDouble symmetryFactor = new ImDouble(Fourteenizer.symmetryFactor);
+    private static ImDouble zureFactor = new ImDouble(Fourteenizer.zureFactor);
     private static Sigmoid hran = new Sigmoid(Fourteenizer.hran.inverseTime, Fourteenizer.hran.adherence, Fourteenizer.hran.asymptote);
     private static Sigmoid jacks = new Sigmoid(Fourteenizer.jacks.inverseTime, Fourteenizer.jacks.adherence, Fourteenizer.jacks.asymptote);
     private static Sigmoid murizara = new Sigmoid(Fourteenizer.murizara.inverseTime, Fourteenizer.murizara.adherence, Fourteenizer.murizara.asymptote);
@@ -44,6 +45,7 @@ public class FourteenizerMenu {
     public static void show(ImBoolean showFourteenizer) {
         float relativeX = windowWidth * 0.455f;
         float relativeY = windowHeight * 0.04f;
+        float minDragWidth = 60.0f;
         ImGui.setNextWindowPos(relativeX, relativeY, ImGuiCond.FirstUseEver);
 
         if(ImGui.begin("Fourteenizer v" + Fourteenizer.VERSION, showFourteenizer, ImGuiWindowFlags.AlwaysAutoResize)) {
@@ -77,22 +79,28 @@ public class FourteenizerMenu {
                 ImGui.tableNextRow();
 
                 ImGui.tableSetColumnIndex(0);
-                ImGui.setNextItemWidth(ImGui.getTextLineHeight());
+                ImGui.setNextItemWidth(minDragWidth);
                 if (ImGui.dragScalar("TT Reallocation", ImGuiDataType.S32, scratchReallocationThreshold, 1, 2, 7, "%d")) {
                     Fourteenizer.scratchReallocationThreshold = scratchReallocationThreshold.get();
                 }
                 toolTip("The Fourteenizer algorithm will not place notes on the same side as a simultaneous scratch. If the number of key notes exceeds this threshold, reallocate the simultaneous scratch to a key lane, then rerun the algorithm.");
                 ImGui.tableSetColumnIndex(1);
-                ImGui.setNextItemWidth(ImGui.getTextLineHeight());
+                ImGui.setNextItemWidth(minDragWidth);
                 if (ImGui.dragScalar("Avoid LN Factor", ImGuiDataType.S32, avoidLNFactor, 1, 0, 5, "%d")) {
                     Fourteenizer.avoidLNFactor = avoidLNFactor.get();
                 }
                 toolTip("The Fourteenizer algorithm avoids placing short key notes on the same side as a key LN. The higher the Avoid LN factor, the less likely short notes are to combine with LNs.");
                 ImGui.tableNextRow();
 
+                ImGui.tableSetColumnIndex(0);
+                ImGui.setNextItemWidth(minDragWidth);
+                if (ImGui.dragScalar("Symmetry Factor", ImGuiDataType.Double, symmetryFactor, 0.1f, 0.0f, 5.0f, "%0.1f")) {
+                    Fourteenizer.symmetryFactor = symmetryFactor.get();
+                }
+                toolTip("Higher values decrease the probability of placing notes symmetrically (parallel or mirror) to notes on the other side.");
                 ImGui.tableSetColumnIndex(1);
-                ImGui.setNextItemWidth(ImGui.getTextLineHeight());
-                if (ImGui.dragScalar("Grace Note Factor", ImGuiDataType.S32, zureFactor, 1, 1, 4, "%d")) {
+                ImGui.setNextItemWidth(minDragWidth);
+                if (ImGui.dragScalar("Grace Note Factor", ImGuiDataType.Double, zureFactor, 0.1f, 0.0f, 5.0f, "%0.1f")) {
                     Fourteenizer.zureFactor = zureFactor.get();
                 }
                 toolTip("Higher values weaken the jack and murizara protection on grace notes.");
