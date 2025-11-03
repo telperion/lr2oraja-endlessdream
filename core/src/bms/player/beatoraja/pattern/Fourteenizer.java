@@ -15,7 +15,7 @@ import bms.model.*;
 import elemental2.dom.CSSProperties.MaxHeightUnionType;
 
 public class Fourteenizer {
-	public static final String VERSION = "0.2.91";
+	public static final String VERSION = "0.2.92";
 
 	public static final double MAX_EXPONENT = 20.0;
 
@@ -120,8 +120,10 @@ public class Fourteenizer {
 	public static Integer scratchReallocationThreshold = 4;
 	public static Integer avoidLNFactor = 1;
 	public static Double symmetryFactor = 0.0;
+	public static Double similarityFactor = 0.0;
+	public static Double similarityCutoff = 0.1;
 	public static Double zureFactor = 0.0;
-	public static Sigmoid hran = new Sigmoid(3.0, 1.5, -0.1);
+	public static Sigmoid hran = new Sigmoid(1.0, 1.5, 0.0);
     public static Sigmoid jacks = new Sigmoid(0.5, 3.0, -0.02);
     public static Sigmoid murizara = new Sigmoid(0.5, 3.0, -0.02);
 
@@ -405,6 +407,15 @@ public class Fourteenizer {
 			fff = new HashMap<>();
 			lanesOccupied = new HashSet<>();
 			initialize();
+		}
+
+		static final double maxFavorability() {
+			double m = 0.0;
+			FiveFingerFavorability f = new FiveFingerFavorability();
+			for (int i = 0; i < 7; i++) {
+				m = Math.max(m, f.sumPDF(i));
+			}
+			return m;
 		}
 
 		private final void removeLane(int lane) {
@@ -782,6 +793,50 @@ public class Fourteenizer {
 				return false;
 			}
 			return true;
+		}
+
+		private Double bestSimilarityScore(int laneSource, int laneDestination, TimeLine tl) {
+			// If the absolute lane offset with a previous note is the same
+			// as with the current note, we should consider it a candidate
+			// for RAN-style mapping. e.g.,
+			// if the comparison note in lane 5 was sourced from lane 2
+			// and an incoming note sourced from lane 3 is being tested,
+			// we could preserve original chart structure by placing it
+			// in lane 6 (or lane 4), since the one-lane offset would be
+			// preserved.
+			Note noteIncoming = tl.getNote(laneSource);
+			if (noteIncoming == null) {
+				// No incoming note.
+				return null;
+			}
+			Map<Integer, Double> similarities = new HashMap<>();
+			Region regionIncoming = new Region(laneDestination);
+			for (int i = 0; i < LANES; i++) {
+				Region regionHistory = new Region(i);
+				if (regionHistory.input != regionIncoming.input) {
+					// Only applies to notes of the same input type.
+					// (Becomes a trivial match in the scratch case.)
+					continue;
+				}
+				if (regionHistory.side != regionIncoming.side) {
+					// Not considering cross-side correlation.
+					continue;
+				}
+				if (data[i].note == null || data[i].source < 0) {
+					// Need history in the potential destination lane.
+					continue;
+				}
+
+				if (Math.abs(laneSource - data[i].source) == Math.abs(laneDestination - i)) {
+					double distance = levenshteinDistance(data[i].note, noteIncoming);
+					double hranEffect = 1.0 - hran.evaluate(data[i].since(tl.getTime()));
+					similarities.put(i, Math.exp(-distance * similarityFactor) * hranEffect);
+				}
+			}
+			if (similarities.isEmpty()) {
+				return null;
+			}
+			return similarities.values().stream().max(Double::compare).orElse(null);
 		}
 
 		private double pdfJack(int lane, long time) {
@@ -1189,100 +1244,78 @@ public class Fourteenizer {
             return false;
 		}
 
-		private boolean mapNoteRAN(TimeLine tl, int laneSource) {
-			if (!mappingNeeded(laneSource, tl)) {
-				return false;
-			}
+		private boolean remover(Map.Entry<Pair<Integer, Integer>, Double> entry, int laneSourceRef, int laneDestinationRef) {
+			int laneSource = entry.getKey().getKey();
+			int laneDestination = entry.getKey().getValue();
+			Region region = new Region(laneDestination);
 
+			return laneSource == laneSourceRef ||
+			laneDestination == laneDestinationRef ||
+			!fff.get(region.side).hasMatching(laneDestination);
+		}
+
+		private void mapNoteSetRAN(TimeLine tl, Set<Integer> laneSources) {
 			long time = tl.getTime();
-			// Filter the key note history to:
-			// - notes in selectable lanes
-			//   - selectable sides for that note
-			//   - at least one five-finger favorability combo matches on that side
-			// - that were mapped without H-RAN
-			// - and whose source lane matches the incoming note's source lane
-			Region allocatedRegion = allocator.get(laneSource);
-			Set<Integer> filteredHistory = new HashSet<>();
-			double pdf[] = new double[LANES];
-			double cdf = 0.0;
-			for (int i = 0; i < LANES; i++) {
-				if (!mappingAvailable(laneSource, i, tl)) {
+
+			Map<Pair<Integer, Integer>, Double> similarityScores = new HashMap<>();
+			for (int laneSource : laneSources) {
+				if (!mappingNeeded(laneSource, tl)) {
 					continue;
+				}
+				for (int i = 0; i < LANES; i++) {
+					if (!mappingAvailable(laneSource, i, tl)) {
+						continue;
+					}
+					Double similarityScore = bestSimilarityScore(laneSource, i, tl);
+					if (similarityScore == null) {
+						continue;
+					}
+					similarityScores.put(new Pair<>(laneSource, i), similarityScore);
+				}
+			}
+
+			double mdf = FiveFingerFavorability.maxFavorability();
+			while (!similarityScores.isEmpty()) {
+				Map<Pair<Integer, Integer>, Double> feasibilityScores = new HashMap<>();
+				
+				for (Pair<Integer, Integer> key : similarityScores.keySet()) {
+					int laneSource = key.getKey();
+					int laneDestination = key.getValue();
+					Region region = new Region(laneDestination);
+
+					double score = similarityScores.get(key);
+					if (region.input == Input.KEY) {
+						double pdf = fff.get(region.side).sumPDF(normalize(laneDestination));
+						score *= pdf;
+					}
+					feasibilityScores.put(key, score / mdf);
 				}
 
-				// If the absolute lane offset with a previous note is the same
-				// as with the current note, we should consider it a candidate
-				// for RAN-style mapping. e.g.,
-				// if the comparison note in lane 5 was sourced from lane 2
-				// and an incoming note sourced from lane 3 is being tested,
-				// we could preserve original chart structure by placing it
-				// in lane 6 (or lane 4), since the one-lane offset would be
-				// preserved.
-                Region region = new Region(i);
-				boolean foundParallelCandidate = false;
-				for (int parallel = 0; parallel < 7; parallel++) {
-					final int testShift = laneSource - parallel;
-					final int testLane = i + testShift;
-					final Region testRegion = new Region(testLane);
-					if (testRegion.input != region.input) {
-						continue;
-					}
-					if (testRegion.side != region.side) {
-						continue;
-					}
-					if (Math.abs(laneSource - data[testLane].source) == Math.abs(testShift)) {
-						foundParallelCandidate = true;
-						break;
-					}
+				Map.Entry<Pair<Integer, Integer>, Double> mostFeasible = feasibilityScores.entrySet().stream().max(Map.Entry.comparingByValue()).orElse(null);
+				if (mostFeasible == null) {
+					break;
 				}
-				if (!foundParallelCandidate) {
-					pdf[i] = 0.0;
-					continue;
+				int laneSource = mostFeasible.getKey().getKey();
+				int laneDestination = mostFeasible.getKey().getValue();
+				double feasibilityScore = mostFeasible.getValue();
+
+				if (feasibilityScore < similarityCutoff) {
+					// Not a strong enough similiarity result.
+					break;
 				}
-				// Passes all filters.
-				if (region.input == Input.KEY) {
-					if (fff.get(region.side).hasMatching(i)) {
-						pdf[i] = fff.get(region.side).sumPDF(normalize(i));
-					}
-					else {
-						// No matching five-finger favorability combo.
-						pdf[i] = 0.0;
-						continue;
-					}
+				
+				permuter.put(laneSource, laneDestination);
+				removeLane(laneDestination);
+				strategy.merge(Strategy.RAN, 1, Integer::sum);
+				if (new Region(laneSource).input == Input.TT) {
+					reallocationCount++;
 				}
-				else {
-					pdf[i] = 1.0;
-				}
-				cdf += pdf[i];
-				pdf[i] *= (1.0 - hran.evaluate(data[i].since(time)));
-				pdf[i] *= (1.0 - levenshteinDistance(data[i].note, tl.getNote(laneSource)));
-				filteredHistory.add(i);
+				laneSources.remove(laneSource);
+
+				similarityScores.entrySet().removeIf(
+					entry -> remover(entry, laneSource, laneDestination)
+				);
 			}
-			// Run the RAN vs. H-RAN trigger for each note in that filtered history.
-			// If on any note, the trigger doesn't fire:
-			// - use the same mapping as that previous note
-			// - remove that lane from the selectable lanes
-			// - continue to the next incoming note
-			// Logger.getGlobal().info("PDF: " + Arrays.toString(pdf));
-			if (cdf <= 0.0) {
-				return false;
-			}
-			double r = rand.nextDouble();
-			for (int i = 0; i < LANES; i++) {
-				Region region = new Region(i);
-				r -= pdf[i] / cdf;
-				if (r <= 0.0) {
-					permuter.put(laneSource, i);
-					removeLane(i);
-					strategy.merge(Strategy.RAN, 1, Integer::sum);
-					if (new Region(laneSource).input == Input.TT) {
-						reallocationCount++;
-					}
-					// Logger.getGlobal().info("Mapped note RAN: " + laneSource + " -> " + i);
-					return true;
-				}
-			}
-			return false;
 		}
 
 		private boolean mapNoteSymmetry(TimeLine tl, int laneSource) {
@@ -1510,14 +1543,7 @@ public class Fourteenizer {
 				remaining = new HashSet<>();
 			}
 			
-			for (int i : hasNote) {
-				if (!mapNoteRAN(tl, i)) {
-					remaining.add(i);
-				}
-			}
-            hasNote = remaining;
-            remaining = new HashSet<>();
-			
+			mapNoteSetRAN(tl, hasNote);
 
 			for (int i : hasNote) {
 				if (!mapNoteSymmetry(tl, i)) {

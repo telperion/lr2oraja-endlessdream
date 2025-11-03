@@ -26,6 +26,8 @@ public class FourteenizerMenu {
     private static ImBoolean avoidPills = new ImBoolean(Fourteenizer.avoidPills);
     private static ImInt scratchReallocationThreshold = new ImInt(Fourteenizer.scratchReallocationThreshold);
     private static ImInt avoidLNFactor = new ImInt(Fourteenizer.avoidLNFactor);
+    private static ImDouble similarityFactor = new ImDouble(Fourteenizer.similarityFactor);
+    private static ImDouble similarityCutoff = new ImDouble(Fourteenizer.similarityCutoff);
     private static ImDouble symmetryFactor = new ImDouble(Fourteenizer.symmetryFactor);
     private static ImDouble zureFactor = new ImDouble(Fourteenizer.zureFactor);
     private static Sigmoid hran = new Sigmoid(Fourteenizer.hran.inverseTime, Fourteenizer.hran.adherence, Fourteenizer.hran.asymptote);
@@ -104,6 +106,20 @@ public class FourteenizerMenu {
                     Fourteenizer.zureFactor = zureFactor.get();
                 }
                 toolTip("Higher values weaken the jack and murizara protection on grace notes.");
+                ImGui.tableNextRow();
+
+                ImGui.tableSetColumnIndex(0);
+                ImGui.setNextItemWidth(minDragWidth);
+                if (ImGui.dragScalar("Similarity Factor", ImGuiDataType.Double, similarityFactor, 0.1f, 0.0f, 5.0f, "%0.1f")) {
+                    Fourteenizer.similarityFactor = similarityFactor.get();
+                }
+                toolTip("Higher values make the similarity measure between keysounds more strict. A value of 0 disregards keysound similarity entirely and only examines geometric consistency.");
+                ImGui.tableSetColumnIndex(1);
+                ImGui.setNextItemWidth(minDragWidth);
+                if (ImGui.dragScalar("Similarity Cutoff", ImGuiDataType.Double, similarityCutoff, 0.1f, 0.0f, 1.0f, "%0.1f")) {
+                    Fourteenizer.similarityCutoff = similarityCutoff.get();
+                }
+                toolTip("Higher values make the similarity measure more generally strict.");
                 ImGui.tableNextRow();
             }
             ImGui.endTable();
