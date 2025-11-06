@@ -270,7 +270,7 @@ public abstract class LaneShuffleModifier extends PatternModifier {
 				"\n\tJack Protection: " + Fourteenizer.jacks.toString() +
 				"\n\tMurizara Protection: " + Fourteenizer.murizara.toString() +
 				"\n\nStrategies:\n\t" + stateMachine.reportStrategies() +
-				"\n\tReallocation Count: " + stateMachine.getReallocationCount().toString()
+				"\nReallocation Count: " + stateMachine.getReallocationCount().toString()
 			);
 		}
 	}

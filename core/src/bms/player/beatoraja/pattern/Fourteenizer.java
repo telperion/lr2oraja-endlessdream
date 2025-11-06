@@ -15,7 +15,7 @@ import bms.model.*;
 import elemental2.dom.CSSProperties.MaxHeightUnionType;
 
 public class Fourteenizer {
-	public static final String VERSION = "0.2.92";
+	public static final String VERSION = "0.3.0";
 
 	public static final double MAX_EXPONENT = 20.0;
 
@@ -120,7 +120,7 @@ public class Fourteenizer {
 	public static Integer scratchReallocationThreshold = 4;
 	public static Integer avoidLNFactor = 1;
 	public static Double symmetryFactor = 0.0;
-	public static Double similarityFactor = 0.0;
+	public static Double similarityFactor = 1.0;
 	public static Double similarityCutoff = 0.1;
 	public static Double zureFactor = 0.0;
 	public static Sigmoid hran = new Sigmoid(1.0, 1.5, 0.0);
@@ -360,7 +360,7 @@ public class Fourteenizer {
 			fff.put( 93,2e4); // 1,0,1,1,1,0,1
 			fff.put( 61,1e4); // 1,0,1,1,1,1,0
 			fff.put(115,1e2); // 1,1,0,0,1,1,1
-			fff.put(107,1e7); // 1,1,0,1,0,1,1
+			fff.put(107,1e6); // 1,1,0,1,0,1,1
 			fff.put( 91,1e4); // 1,1,0,1,1,0,1
 			fff.put( 59,2e4); // 1,1,0,1,1,1,0
 			fff.put(103,1e1); // 1,1,1,0,0,1,1
@@ -369,16 +369,16 @@ public class Fourteenizer {
 			fff.put( 79,1e1); // 1,1,1,1,0,0,1
 			fff.put( 47,1e1); // 1,1,1,1,0,1,0
 			fff.put( 31,1e3); // 1,1,1,1,1,0,0
-			fff.put( 85,1e7); // 1,0,1,0,1,0,1
-			fff.put( 42,1e7); // 0,1,0,1,0,1,0
-			fff.put( 27,2e5); // 1,1,0,1,1,0,0
-			fff.put(108,2e5); // 0,0,1,1,0,1,1
+			fff.put( 85,5e6); // 1,0,1,0,1,0,1
+			fff.put( 42,5e6); // 0,1,0,1,0,1,0
+			fff.put( 27,1e6); // 1,1,0,1,1,0,0
+			fff.put(108,1e6); // 0,0,1,1,0,1,1
 			fff.put(120,1e5); // 0,0,0,1,1,1,1
 			fff.put( 60,1e5); // 0,0,1,1,1,1,0
-			fff.put( 82,2e6); // 0,1,0,0,1,0,1
-			fff.put( 37,2e6); // 1,0,1,0,0,1,0
-			fff.put( 74,5e6); // 0,1,0,1,0,0,1
-			fff.put( 41,5e6); // 1,0,0,1,0,1,0
+			fff.put( 82,3e6); // 0,1,0,0,1,0,1
+			fff.put( 37,3e6); // 1,0,1,0,0,1,0
+			fff.put( 74,1e7); // 0,1,0,1,0,0,1
+			fff.put( 41,1e7); // 1,0,0,1,0,1,0
 			if (avoid56) {
 				// Remove combos with lanes "5 and 6" (1 and 2 in beatoraja numbering).
 				fff = fff.entrySet().stream().filter(entry -> 
@@ -827,7 +827,9 @@ public class Fourteenizer {
 					continue;
 				}
 
-				if (Math.abs(laneSource - data[i].source) == Math.abs(laneDestination - i)) {
+				// Not considering parallel movement at this time.
+				// if (Math.abs(laneSource - data[i].source) == Math.abs(laneDestination - i)) {
+				if (laneSource == data[i].source) {
 					double distance = levenshteinDistance(data[i].note, noteIncoming);
 					double hranEffect = 1.0 - hran.evaluate(data[i].since(tl.getTime()));
 					similarities.put(i, Math.exp(-distance * similarityFactor) * hranEffect);
@@ -971,6 +973,22 @@ public class Fourteenizer {
 			}
 		}
 
+		private boolean allLNsResolvingThisTimeLine(Side side) {
+			for (int i : new Region(Input.KEY, side).lanes()) {
+				Region region = new Region(i);
+				if (data[i].head != null) {
+					// If there's an LN active in this lane, check whether it's being resolved
+					// (there's a mapping of a real source lane to this lane)
+					if (!permuter.entrySet().stream().anyMatch(
+						entry -> entry.getValue() == i && entry.getKey() < 1000
+					)) {
+						return false;
+					}
+				}
+			}
+			return true;
+		}
+
 
         private Side compare(Map<Side, Integer> map, boolean resolveTie) {
             if (map.get(Side.P1) < map.get(Side.P2)) {
@@ -987,12 +1005,6 @@ public class Fourteenizer {
 
         private boolean tryAvailableRegions(int laneSource, Input input, NoteHeld noteHeld) {
 			RegionSet availableRegions = allocator.available(input, noteHeld);
-			for (int lane : zeroPointLanes) {
-				Region region = new Region(lane);
-				if (region.input == Input.TT) {
-					availableRegions.remove(region);
-				}
-			}
             if (availableRegions.isEmpty()) {
                 throw new IndexOutOfBoundsException("No available regions found for input: " + input + " and noteHeld: " + noteHeld);
             }
@@ -1006,6 +1018,17 @@ public class Fourteenizer {
 			}
             return false;
         }
+
+		private Side chooseScratchSide(long time) {
+			// Break ties by following the most recent scratch.
+			double sinceP1 = data[new Region(Input.TT, Side.P1).scratch()].since(time, false);
+			double sinceP2 = data[new Region(Input.TT, Side.P2).scratch()].since(time, false);
+			boolean preferP1 = rand.nextDouble() > hran.evaluate(sinceP1);
+			boolean preferP2 = rand.nextDouble() > hran.evaluate(sinceP2);
+			if (preferP1) {return Side.P1;}
+			if (preferP2) {return Side.P2;}
+			return (rand.nextDouble() > 0.5) ? Side.P1 : Side.P2;
+		}
 
 		private boolean placeBSS(int laneSource, long time) {
             if (tryAvailableRegions(laneSource, Input.TT, NoteHeld.SN)) {
@@ -1026,8 +1049,11 @@ public class Fourteenizer {
 					(rand.nextDouble() > pdfMurizaraFromPlacingScratch(i, time)) ? 1 : 0
 				), Integer::sum);
 			}
-
-            Side side = compare(protections, true);
+			// Break ties by following the most recent scratch.
+            Side side = compare(protections, false);
+			if (side == Side.BOTH) {
+				side = chooseScratchSide(time);
+			}
             allocator.allocate(laneSource, new Region(Input.TT, side), NoteHeld.LN);
             return true;
 		}
@@ -1050,11 +1076,13 @@ public class Fourteenizer {
 				if (region.input != Input.KEY) {
 					continue;
 				}
-                Side otherSide = (region.side == Side.P1) ? Side.P2 : Side.P1;
-				if (data[i].head != null) {
-                    // TRICKY: file LNs on the opposite side so the less-than 
-                    // comparator chooses the side with more active LNs.
-					activeLNs.merge(otherSide, 1, Integer::sum);
+				if (!allLNsResolvingThisTimeLine(region.side)) {
+					Side otherSide = (region.side == Side.P1) ? Side.P2 : Side.P1;
+					if (data[i].head != null) {
+						// TRICKY: file LNs on the opposite side so the less-than 
+						// comparator chooses the side with more active LNs.
+						activeLNs.merge(otherSide, 1, Integer::sum);
+					}
 				}
 				protections.merge(region.side, (
 					(rand.nextDouble() > pdfJack(i, time)) ? 1 : 0
@@ -1079,6 +1107,8 @@ public class Fourteenizer {
                 return true;
             }
 
+			// Otherwise, map to the TT lane on the side
+			// that triggers fewer murizara preventions.
 			Map<Side, Integer> protections = new HashMap<>();
 			protections.put(Side.P1, 0);
 			protections.put(Side.P2, 0);
@@ -1091,9 +1121,11 @@ public class Fourteenizer {
 					(rand.nextDouble() > pdfMurizaraFromPlacingScratch(i, time)) ? 1 : 0
 				), Integer::sum);
 			}
-			// Otherwise, map to the TT lane on the side
-			// that triggers fewer murizara preventions.
-            Side side = compare(protections, true);
+			// Break ties by following the most recent scratch.
+            Side side = compare(protections, false);
+			if (side == Side.BOTH) {
+				side = chooseScratchSide(time);
+			}
             allocator.allocate(laneSource, new Region(Input.TT, side), NoteHeld.SN);
             return true;
 		}
