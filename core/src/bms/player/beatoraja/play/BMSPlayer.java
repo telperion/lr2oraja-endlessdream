@@ -217,11 +217,6 @@ public class BMSPlayer extends MainState {
 		boolean score = true;
 		boolean forceNoIRSend = false;
 
-		// Allow osu score submission
-		if (model.isFromOSU()) {
-			forceNoIRSend = false;
-		}
-
 		// RANDOM構文処理
 		if (model.getRandom() != null && model.getRandom().length > 0) {
 			if (autoplay.mode == BMSPlayerMode.Mode.REPLAY) {
@@ -339,7 +334,7 @@ public class BMSPlayer extends MainState {
 					mod.modify(model);
 					assist = Math.max(assist, 1);
 					score = false;
-					Logger.getGlobal().info("譜面オプション : FOURTEENIZER (L-ASSIST)");
+					logger.info("譜面オプション : FOURTEENIZER (L-ASSIST)");
 				} else {
 					// SPでなければBATTLEは未適用
 					playinfo.doubleoption = 0;

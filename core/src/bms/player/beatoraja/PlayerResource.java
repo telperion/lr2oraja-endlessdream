@@ -218,9 +218,6 @@ public final class PlayerResource {
 		if (model == null) {
 			return null;
 		}
-		if (decoder instanceof OSUDecoder) {
-			model.setFromOSU(true);
-		}
 
 		marginTime = BMSModelUtils.setStartNoteTime(model, 1000);
 		BMSPlayerRule.validate(model);

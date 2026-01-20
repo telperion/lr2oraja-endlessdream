@@ -47,11 +47,11 @@ public class Fourteenizer {
 		// --------------+------ ....-x-`` -------------------------->
 		//               |---````        
 		// minAsymptote -+------------------------------------------->
-        public Double inverseTime;
-        public Double adherence;
-		public Double asymptote;
+        public double inverseTime;
+        public double adherence;
+		public double asymptote;
 
-        public Sigmoid(Double inverseTime, Double adherence, Double asymptote) {
+        public Sigmoid(double inverseTime, double adherence, double asymptote) {
             this.inverseTime = inverseTime;
             this.adherence = adherence;
             this.asymptote = asymptote;
